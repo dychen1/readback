@@ -1,0 +1,19 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+script_dir="${0:A:h}"
+project_dir="${script_dir:h}"
+bundle_dir="${project_dir}/dist/ReadBack Voice.app"
+contents_dir="${bundle_dir}/Contents"
+
+"${script_dir}/swiftw" build -c release --product readback-voice
+"${script_dir}/swiftw" build -c release --product voicepipe
+
+mkdir -p "${contents_dir}/MacOS"
+cp -f "${project_dir}/.build/release/readback-voice" "${contents_dir}/MacOS/readback-voice"
+cp -f "${project_dir}/.build/release/voicepipe" "${contents_dir}/MacOS/voicepipe"
+cp -f "${project_dir}/App/Info.plist" "${contents_dir}/Info.plist"
+codesign --force --deep --sign - "${bundle_dir}"
+
+print "Built ${bundle_dir}"

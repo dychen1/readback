@@ -209,6 +209,18 @@ tempCodeRunnerFile.py
 # PyPI configuration file
 .pypirc
 
+# Swift Package Manager
+.build/
+.swiftpm/
+.DS_Store
+
+# ReadBack Voice local state and model weights
+models/**
+runtime/
+dist/
+*.wav
+*.pcm
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
