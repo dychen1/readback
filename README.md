@@ -58,8 +58,8 @@ more to resume. If the clipboard text changes, the shortcut stops the current
 read-back and starts the new text from the beginning. You can use the same
 dynamic action from the menu-bar app.
 
-Choose **Playback Speed** in the menu to change the current or next
-read-back from `0.5×` through `2×`. Changes take effect at the current
+Use the **Playback Speed** slider to change the current or next read-back from
+`0.5×` through `2×` in `0.25×` steps. Changes take effect at the current
 audio position without generating the speech again, including while paused.
 The app saves the selected rate for later launches.
 
@@ -150,7 +150,7 @@ The menu-bar app provides:
 - Read Clipboard with the global `⌥⌘R` shortcut
 - Curated voice choices grouped by language, plus voice preview
 - Paragraph-pause slider from `0 ms` through `2,000 ms` in `50 ms` steps
-- Live playback-speed presets from `0.5×` through `2×`
+- Live playback-speed slider from `0.5×` through `2×` in `0.25×` steps
 - Kokoro download and reload
 - Launch at login when running from the app bundle
 - Quit with managed backend shutdown

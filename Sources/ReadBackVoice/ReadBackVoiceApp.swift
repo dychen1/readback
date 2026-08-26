@@ -114,18 +114,27 @@ private struct ReadBackPopover: View {
                 )
             }
 
-            Picker(
-                "Playback Speed",
-                selection: Binding(
-                    get: { controller.playbackRate },
-                    set: { controller.setPlaybackRate($0) }
-                )
-            ) {
-                ForEach(PlaybackRate.presets, id: \.self) { rate in
-                    Text(ServiceController.playbackRateLabel(rate)).tag(rate)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Playback Speed")
+                    Spacer()
+                    Text(ServiceController.playbackRateLabel(controller.playbackRate))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
                 }
+                Slider(
+                    value: Binding(
+                        get: { controller.playbackRate },
+                        set: { controller.setPlaybackRate($0) }
+                    ),
+                    in: PlaybackRate.minimum...PlaybackRate.maximum,
+                    step: PlaybackRate.step
+                )
+                .accessibilityLabel("Playback Speed")
+                .accessibilityValue(
+                    ServiceController.playbackRateLabel(controller.playbackRate)
+                )
             }
-            .pickerStyle(.menu)
 
             Divider()
 

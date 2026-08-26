@@ -83,6 +83,17 @@ func configurationTests() -> [TestCase] {
 
             try expectEqual(loaded.playbackRate, 1.75, "persisted playback rate")
         },
+        TestCase(name: "playback rate snaps saved values to quarter-speed steps") {
+            var configuration = AppConfiguration.default(
+                modelDirectory: URL(fileURLWithPath: "/tmp/models")
+            )
+
+            configuration.setPlaybackRate(1.38)
+            try expectEqual(configuration.playbackRate, 1.5, "rounded playback rate")
+
+            configuration.setPlaybackRate(2.1)
+            try expectEqual(configuration.playbackRate, 2.0, "maximum playback rate")
+        },
         TestCase(name: "configuration store persists voice and paragraph pause changes") {
             let directory = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
