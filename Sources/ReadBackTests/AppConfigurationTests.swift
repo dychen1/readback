@@ -117,6 +117,17 @@ func configurationTests() -> [TestCase] {
             try expectEqual(settings.languageCode, "b", "speech settings language")
             try expectEqual(settings.paragraphPause, 0.75, "speech settings paragraph pause")
         },
+        TestCase(name: "paragraph pause snaps saved values to 50 milliseconds") {
+            var configuration = AppConfiguration.default(
+                modelDirectory: URL(fileURLWithPath: "/tmp/models")
+            )
+
+            configuration.setParagraphPause(0.126)
+            try expectEqual(configuration.paragraphPause, 0.15, "rounded paragraph pause")
+
+            configuration.setParagraphPause(2.1)
+            try expectEqual(configuration.paragraphPause, 2.0, "maximum paragraph pause")
+        },
         TestCase(name: "configuration store migrates a missing model root to the current default") {
             let directory = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)

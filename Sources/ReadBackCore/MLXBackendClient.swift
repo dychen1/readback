@@ -61,7 +61,7 @@ public final class MLXBackendClient: SpeechSynthesizing, @unchecked Sendable {
     public func synthesize(_ request: SpeechRequest, modelPath: URL) async throws -> AudioClip {
         let payload = BackendSpeechRequest(
             model: modelPath.path,
-            input: request.input,
+            input: SpeechTextNormalizer.normalize(request.input),
             voice: resolvedVoice(request.voice, modelPath: modelPath),
             languageCode: request.languageCode,
             responseFormat: request.format,

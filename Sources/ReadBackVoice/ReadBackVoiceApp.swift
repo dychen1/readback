@@ -11,28 +11,55 @@ struct ReadBackApp: App {
 
     var body: some Scene {
         MenuBarExtra("ReadBack", systemImage: controller.isRunning ? "waveform.circle.fill" : "waveform.circle") {
-            Text(controller.status)
-            Text("127.0.0.1:\(controller.configuration.publicPort)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            ReadBackPopover(controller: controller)
+        }
+        .menuBarExtraStyle(.window)
+    }
+}
+
+private struct ReadBackPopover: View {
+    @ObservedObject var controller: ServiceController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: controller.isRunning ? "waveform.circle.fill" : "waveform.circle")
+                    .font(.title2)
+                    .foregroundStyle(controller.isRunning ? .green : .secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(controller.status)
+                        .lineLimit(1)
+                    Text("127.0.0.1:\(controller.configuration.publicPort)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+
             if let shortcutStatus = controller.shortcutStatus {
                 Text(shortcutStatus)
                     .font(.caption)
                     .foregroundStyle(.orange)
+                    .lineLimit(2)
             }
+
             Divider()
 
-            if controller.isRunning {
-                Button("Stop service") { controller.stop() }
-            } else {
-                Button("Start service") { controller.start() }
+            HStack {
+                Button(controller.isRunning ? "Stop service" : "Start service") {
+                    if controller.isRunning {
+                        controller.stop()
+                    } else {
+                        controller.start()
+                    }
+                }
+                Button(controller.clipboardActionLabel) {
+                    controller.readClipboard()
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
 
-            Button(controller.clipboardActionLabel) {
-                controller.readClipboard()
-            }
-
-            Menu("Voice: \(controller.selectedVoiceName)") {
+            Menu {
                 ForEach(controller.voiceGroups, id: \.name) { group in
                     Section(group.name) {
                         ForEach(group.voices) { voice in
@@ -48,19 +75,43 @@ struct ReadBackApp: App {
                         }
                     }
                 }
+            } label: {
+                HStack {
+                    Text("Voice")
+                    Spacer()
+                    Text(controller.selectedVoiceName)
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
             }
+            .menuStyle(.borderlessButton)
             .disabled(controller.voiceGroups.isEmpty)
 
-            Picker(
-                "Paragraph Pause",
-                selection: Binding(
-                    get: { controller.paragraphPause },
-                    set: { controller.setParagraphPause($0) }
-                )
-            ) {
-                ForEach(ParagraphPause.presets, id: \.self) { seconds in
-                    Text(ServiceController.paragraphPauseLabel(seconds)).tag(seconds)
+            Divider()
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Paragraph Pause")
+                    Spacer()
+                    Text(ServiceController.paragraphPauseLabel(controller.paragraphPause))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
                 }
+                Slider(
+                    value: Binding(
+                        get: { controller.paragraphPause },
+                        set: { controller.setParagraphPause($0) }
+                    ),
+                    in: ParagraphPause.minimum...ParagraphPause.maximum,
+                    step: ParagraphPause.step
+                )
+                .accessibilityLabel("Paragraph Pause")
+                .accessibilityValue(
+                    ServiceController.paragraphPauseLabel(controller.paragraphPause)
+                )
             }
 
             Picker(
@@ -74,24 +125,31 @@ struct ReadBackApp: App {
                     Text(ServiceController.playbackRateLabel(rate)).tag(rate)
                 }
             }
+            .pickerStyle(.menu)
 
-            Button(controller.modelInstalled ? "Reload Kokoro" : "Download Kokoro") {
-                controller.installOrLoadModel()
+            Divider()
+
+            HStack {
+                Button(controller.modelInstalled ? "Reload Kokoro" : "Download Kokoro") {
+                    controller.installOrLoadModel()
+                }
+                .disabled(controller.isBusy)
+
+                Spacer()
+
+                Button("Quit") {
+                    Task { await controller.quit() }
+                }
             }
-            .disabled(controller.isBusy)
 
             Toggle("Launch at login", isOn: Binding(
                 get: { controller.launchAtLogin },
                 set: { controller.setLaunchAtLogin($0) }
             ))
             .disabled(!controller.canManageLaunchAtLogin)
-
-            Divider()
-            Button("Quit") {
-                Task { await controller.quit() }
-            }
         }
-        .menuBarExtraStyle(.menu)
+        .padding(14)
+        .frame(width: 340)
     }
 }
 
@@ -351,9 +409,7 @@ final class ServiceController: ObservableObject {
     }
 
     static func paragraphPauseLabel(_ seconds: Double) -> String {
-        if seconds == 0 { return "None" }
-        if seconds < 1 { return "\(Int((seconds * 1_000).rounded())) ms" }
-        return seconds.formatted(.number.precision(.fractionLength(0...1))) + " seconds"
+        "\(Int((seconds * 1_000).rounded())) ms"
     }
 
     func readClipboard() {

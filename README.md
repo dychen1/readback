@@ -67,9 +67,13 @@ Choose **Voice** to select a short curated list for each supported language.
 Each item shows only the voice name. Choosing any voice selects it and
 immediately says “test, hello world” as a preview.
 
-Choose **Paragraph Pause** to add a saved gap of `250 ms` through `2 seconds`
-between paragraphs, or disable the gap. The default is `500 ms`. Pause and
-resume preserve the unused part of a paragraph gap.
+Use the **Paragraph Pause** slider to add a saved gap from `0 ms` through
+`2,000 ms` in `50 ms` steps. The default is `500 ms`. Pause and resume preserve
+the unused part of a paragraph gap.
+
+Before synthesis, ReadBack removes common Markdown formatting such as headings,
+emphasis, list markers, quotes, links, tables, and code delimiters. It speaks the
+readable content and keeps paragraph breaks.
 
 | Current state | Clipboard | `⌥⌘R` action |
 | --- | --- | --- |
@@ -145,7 +149,7 @@ The menu-bar app provides:
 - Start and stop controls
 - Read Clipboard with the global `⌥⌘R` shortcut
 - Curated voice choices grouped by language, plus voice preview
-- Paragraph-pause presets from none through 2 seconds
+- Paragraph-pause slider from `0 ms` through `2,000 ms` in `50 ms` steps
 - Live playback-speed presets from `0.5×` through `2×`
 - Kokoro download and reload
 - Launch at login when running from the app bundle
