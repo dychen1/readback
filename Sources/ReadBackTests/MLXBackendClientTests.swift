@@ -60,18 +60,70 @@ func mlxBackendClientTests() -> [TestCase] {
                 )
                 try expectEqual(body["input"] as? String, "Hello", "speech input")
                 try expectEqual(body["voice"] as? String, "af_heart", "speech voice")
+                try expectEqual(body["lang_code"] as? String, "a", "speech language")
                 try expectEqual(body["response_format"] as? String, "wav", "speech format")
                 try expectEqual(body["speed"] as? Double, 1.1, "speech speed")
                 return StubResponse(status: 200, body: expectedAudio, contentType: "audio/wav")
             }
 
             let clip = try await fixture.client.synthesize(
-                SpeechRequest(input: "Hello", voice: "af_heart", speed: 1.1, format: .wav),
+                SpeechRequest(
+                    input: "Hello",
+                    voice: "af_heart",
+                    languageCode: "a",
+                    speed: 1.1,
+                    format: .wav
+                ),
                 modelPath: URL(fileURLWithPath: "/tmp/models/Kokoro-82M-bf16")
             )
 
             try expectEqual(clip.data, expectedAudio, "audio bytes")
             try expectEqual(clip.format, .wav, "audio format")
+        },
+        TestCase(name: "speech request sends readable text instead of Markdown syntax") {
+            let capturedInput = LockedValue<String?>(nil)
+            let fixture = makeBackendFixture { request in
+                let body = try expectJSONBody(request)
+                capturedInput.set(body["input"] as? String)
+                return StubResponse(status: 200, body: Data([0x52, 0x49, 0x46, 0x46]))
+            }
+            let markdown = """
+                # Heading
+
+                - **Bold** and *italic*
+                - [OpenAI](https://openai.com) and `code`
+
+                > Quote
+
+                | Name | Value |
+                | --- | --- |
+                | One | Two |
+
+                ```swift
+                let value = 1
+                ```
+
+                5 * 3 and unmatched **
+                """
+
+            _ = try await fixture.client.synthesize(
+                SpeechRequest(
+                    input: markdown,
+                    voice: "af_heart",
+                    languageCode: "a",
+                    speed: 1,
+                    format: .wav
+                ),
+                modelPath: URL(fileURLWithPath: "/tmp/models/Kokoro-82M-bf16")
+            )
+
+            try expectEqual(
+                capturedInput.value,
+                "Heading\n\nBold and italic\nOpenAI and code\n\nQuote\n\n"
+                    + "Name, Value\nOne, Two\n\nlet value = 1\n\n"
+                    + "5 * 3 and unmatched **",
+                "speech-safe input"
+            )
         },
         TestCase(name: "speech request resolves an installed voice without network access") {
             let root = FileManager.default.temporaryDirectory
@@ -88,7 +140,13 @@ func mlxBackendClientTests() -> [TestCase] {
             }
 
             _ = try await fixture.client.synthesize(
-                SpeechRequest(input: "Hello", voice: "af_heart", speed: 1, format: .wav),
+                SpeechRequest(
+                    input: "Hello",
+                    voice: "af_heart",
+                    languageCode: "a",
+                    speed: 1,
+                    format: .wav
+                ),
                 modelPath: root
             )
         },
@@ -99,7 +157,13 @@ func mlxBackendClientTests() -> [TestCase] {
 
             do {
                 _ = try await fixture.client.synthesize(
-                    SpeechRequest(input: "Hello", voice: "af_heart", speed: 1, format: .wav),
+                    SpeechRequest(
+                        input: "Hello",
+                        voice: "af_heart",
+                        languageCode: "a",
+                        speed: 1,
+                        format: .wav
+                    ),
                     modelPath: URL(fileURLWithPath: "/tmp/model")
                 )
                 throw TestFailure(description: "upstream error should throw")
@@ -123,6 +187,23 @@ private struct StubResponse {
         self.status = status
         self.body = body
         self.contentType = contentType
+    }
+}
+
+private final class LockedValue<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedValue: Value
+
+    init(_ value: Value) {
+        storedValue = value
+    }
+
+    var value: Value {
+        lock.withLock { storedValue }
+    }
+
+    func set(_ value: Value) {
+        lock.withLock { storedValue = value }
     }
 }
 

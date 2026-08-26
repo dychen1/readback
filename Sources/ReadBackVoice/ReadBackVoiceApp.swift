@@ -6,61 +6,159 @@ import ServiceManagement
 import SwiftUI
 
 @main
-struct ReadBackVoiceApp: App {
+struct ReadBackApp: App {
     @StateObject private var controller = ServiceController()
 
     var body: some Scene {
-        MenuBarExtra("ReadBack Voice", systemImage: controller.isRunning ? "waveform.circle.fill" : "waveform.circle") {
-            Text(controller.status)
-            Text("127.0.0.1:\(controller.configuration.publicPort)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        MenuBarExtra("ReadBack", systemImage: controller.isRunning ? "waveform.circle.fill" : "waveform.circle") {
+            ReadBackPopover(controller: controller)
+        }
+        .menuBarExtraStyle(.window)
+    }
+}
+
+private struct ReadBackPopover: View {
+    @ObservedObject var controller: ServiceController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: controller.isRunning ? "waveform.circle.fill" : "waveform.circle")
+                    .font(.title2)
+                    .foregroundStyle(controller.isRunning ? .green : .secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(controller.status)
+                        .lineLimit(1)
+                    Text("127.0.0.1:\(controller.configuration.publicPort)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+
             if let shortcutStatus = controller.shortcutStatus {
                 Text(shortcutStatus)
                     .font(.caption)
                     .foregroundStyle(.orange)
+                    .lineLimit(2)
             }
+
             Divider()
 
-            if controller.isRunning {
-                Button("Stop service") { controller.stop() }
-            } else {
-                Button("Start service") { controller.start() }
+            HStack {
+                Button(controller.isRunning ? "Stop service" : "Start service") {
+                    if controller.isRunning {
+                        controller.stop()
+                    } else {
+                        controller.start()
+                    }
+                }
+                Button(controller.clipboardActionLabel) {
+                    controller.readClipboard()
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
 
-            Button(controller.clipboardActionLabel) {
-                controller.readClipboard()
+            Menu {
+                ForEach(controller.voiceGroups, id: \.name) { group in
+                    Section(group.name) {
+                        ForEach(group.voices) { voice in
+                            Button {
+                                controller.setVoice(voice)
+                            } label: {
+                                if voice.id == controller.selectedVoiceID {
+                                    Label(voice.name, systemImage: "checkmark")
+                                } else {
+                                    Text(voice.name)
+                                }
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack {
+                    Text("Voice")
+                    Spacer()
+                    Text(controller.selectedVoiceName)
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
             }
+            .menuStyle(.borderlessButton)
+            .disabled(controller.voiceGroups.isEmpty)
 
-            Picker(
-                "Playback Speed",
-                selection: Binding(
-                    get: { controller.playbackRate },
-                    set: { controller.setPlaybackRate($0) }
+            Divider()
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Paragraph Pause")
+                    Spacer()
+                    Text(ServiceController.paragraphPauseLabel(controller.paragraphPause))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                Slider(
+                    value: Binding(
+                        get: { controller.paragraphPause },
+                        set: { controller.setParagraphPause($0) }
+                    ),
+                    in: ParagraphPause.minimum...ParagraphPause.maximum,
+                    step: ParagraphPause.step
                 )
-            ) {
-                ForEach(PlaybackRate.presets, id: \.self) { rate in
-                    Text(ServiceController.playbackRateLabel(rate)).tag(rate)
+                .accessibilityLabel("Paragraph Pause")
+                .accessibilityValue(
+                    ServiceController.paragraphPauseLabel(controller.paragraphPause)
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Playback Speed")
+                    Spacer()
+                    Text(ServiceController.playbackRateLabel(controller.playbackRate))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                Slider(
+                    value: Binding(
+                        get: { controller.playbackRate },
+                        set: { controller.setPlaybackRate($0) }
+                    ),
+                    in: PlaybackRate.minimum...PlaybackRate.maximum,
+                    step: PlaybackRate.step
+                )
+                .accessibilityLabel("Playback Speed")
+                .accessibilityValue(
+                    ServiceController.playbackRateLabel(controller.playbackRate)
+                )
+            }
+
+            Divider()
+
+            HStack {
+                Button(controller.modelInstalled ? "Reload Kokoro" : "Download Kokoro") {
+                    controller.installOrLoadModel()
+                }
+                .disabled(controller.isBusy)
+
+                Spacer()
+
+                Button("Quit") {
+                    Task { await controller.quit() }
                 }
             }
-
-            Button(controller.modelInstalled ? "Reload Kokoro" : "Download Kokoro") {
-                controller.installOrLoadModel()
-            }
-            .disabled(controller.isBusy)
 
             Toggle("Launch at login", isOn: Binding(
                 get: { controller.launchAtLogin },
                 set: { controller.setLaunchAtLogin($0) }
             ))
             .disabled(!controller.canManageLaunchAtLogin)
-
-            Divider()
-            Button("Quit") {
-                Task { await controller.quit() }
-            }
         }
-        .menuBarExtraStyle(.menu)
+        .padding(14)
+        .frame(width: 340)
     }
 }
 
@@ -74,6 +172,13 @@ final class ServiceController: ObservableObject {
     @Published private(set) var shortcutStatus: String?
     @Published private(set) var clipboardPlaybackState: ClipboardPlaybackState = .idle
     @Published private(set) var playbackRate = PlaybackRate.default
+    @Published private(set) var paragraphPause = ParagraphPause.default
+    @Published private(set) var selectedVoiceID = "af_heart"
+    @Published private(set) var voiceGroups: [KokoroVoiceGroup] = []
+
+    var selectedVoiceName: String {
+        KokoroVoiceCatalog.voice(id: selectedVoiceID)?.name ?? selectedVoiceID
+    }
 
     var clipboardActionLabel: String {
         switch clipboardPlaybackState {
@@ -96,6 +201,7 @@ final class ServiceController: ObservableObject {
     private let player: AVFoundationAudioPlayer
     private let clipboardSpeaker: VoicePipeTextSpeaker
     private let clipboardAction: ClipboardReadBackAction
+    private let speechSettings: SpeechSettingsStore
     private var serviceTask: Task<Void, Never>?
     private var clipboardTask: Task<Void, Never>?
     private var clipboardRequestID: UUID?
@@ -114,6 +220,13 @@ final class ServiceController: ObservableObject {
             configuration = .default(modelDirectory: paths.modelsDirectory)
         }
         playbackRate = configuration.playbackRate
+        paragraphPause = configuration.paragraphPause
+        selectedVoiceID = configuration.defaultVoice
+        let modelPath = configuration.modelDirectory.appendingPathComponent(
+            configuration.model.directoryName,
+            isDirectory: true
+        )
+        voiceGroups = KokoroVoiceCatalog.availableGroups(in: modelPath)
 
         store = ModelStore(
             rootURL: configuration.modelDirectory,
@@ -134,17 +247,17 @@ final class ServiceController: ObservableObject {
         let coordinator = SpeechCoordinator(
             synthesizer: backend,
             player: audioPlayer,
-            modelPath: configuration.modelDirectory.appendingPathComponent(
-                configuration.model.directoryName,
-                isDirectory: true
-            )
+            modelPath: modelPath
         )
+        let settings = SpeechSettingsStore(configuration: configuration)
+        speechSettings = settings
         api = ReadBackAPI(
             configuration: configuration,
             modelStore: store,
             backend: backend,
             coordinator: coordinator,
-            downloader: downloader
+            downloader: downloader,
+            speechSettings: settings
         )
         let clipboardEndpoint = URL(
             string: "ws://\(configuration.publicHost):\(configuration.publicPort)/v1/readback/stream"
@@ -277,8 +390,35 @@ final class ServiceController: ObservableObject {
         }
     }
 
+    func setVoice(_ voice: KokoroVoice) {
+        guard voiceGroups.contains(where: { $0.voices.contains(voice) }) else { return }
+
+        if voice.id != selectedVoiceID {
+            configuration.setDefaultVoice(voice.id)
+            selectedVoiceID = voice.id
+            saveSpeechConfiguration(status: "Voice: \(voice.name)")
+        }
+        startClipboardSpeech("test, hello world", completionStatus: "Voice preview finished")
+    }
+
+    func setParagraphPause(_ seconds: Double) {
+        let normalized = ParagraphPause.clamped(seconds)
+        guard normalized != paragraphPause else { return }
+
+        configuration.setParagraphPause(normalized)
+        paragraphPause = normalized
+        saveSpeechConfiguration(
+            status: "Paragraph pause: \(Self.paragraphPauseLabel(normalized))"
+        )
+        refreshSpeechSettingsAndRestartIfNeeded()
+    }
+
     static func playbackRateLabel(_ rate: Double) -> String {
         rate.formatted(.number.precision(.fractionLength(0...2))) + "×"
+    }
+
+    static func paragraphPauseLabel(_ seconds: Double) -> String {
+        "\(Int((seconds * 1_000).rounded())) ms"
     }
 
     func readClipboard() {
@@ -313,7 +453,10 @@ final class ServiceController: ObservableObject {
         }
     }
 
-    private func startClipboardSpeech(_ text: String) {
+    private func startClipboardSpeech(
+        _ text: String,
+        completionStatus: String? = nil
+    ) {
         let previousRequestID = clipboardRequestID
         let requestID = UUID()
         clipboardTask?.cancel()
@@ -335,6 +478,7 @@ final class ServiceController: ObservableObject {
                 guard modelInstalled else {
                     throw ServiceControllerError.modelNotInstalled
                 }
+                await speechSettings.update(SpeechSettings(configuration: configuration))
                 if serviceTask == nil {
                     start()
                 }
@@ -349,7 +493,7 @@ final class ServiceController: ObservableObject {
                 }
                 finishClipboardRequest(
                     requestID: requestID,
-                    status: "Ready — read \(text.count) characters"
+                    status: completionStatus ?? "Ready — read \(text.count) characters"
                 )
             } catch is CancellationError {
             } catch ServiceControllerError.modelNotInstalled {
@@ -445,6 +589,31 @@ final class ServiceController: ObservableObject {
         modelInstalled = (try? await store.installedModels().contains {
             $0.descriptor.id == configuration.model.id
         }) ?? false
+        let modelPath = configuration.modelDirectory.appendingPathComponent(
+            configuration.model.directoryName,
+            isDirectory: true
+        )
+        voiceGroups = KokoroVoiceCatalog.availableGroups(in: modelPath)
+    }
+
+    private func saveSpeechConfiguration(status successStatus: String) {
+        do {
+            try AppConfigurationStore().save(configuration, at: paths.configurationFile)
+            status = successStatus
+        } catch {
+            status = "Setting changed but could not be saved: \(error.localizedDescription)"
+        }
+    }
+
+    private func refreshSpeechSettingsAndRestartIfNeeded() {
+        let activeText = currentClipboardText
+        Task { [weak self, speechSettings] in
+            guard let self else { return }
+            await speechSettings.update(SpeechSettings(configuration: configuration))
+            if let activeText, currentClipboardText == activeText {
+                startClipboardSpeech(activeText)
+            }
+        }
     }
 
     private func waitForBackend() async throws {
@@ -483,6 +652,7 @@ final class ServiceController: ObservableObject {
                 SpeechRequest(
                     input: "Ready.",
                     voice: configuration.defaultVoice,
+                    languageCode: SpeechSettings(configuration: configuration).languageCode,
                     speed: configuration.defaultSpeed,
                     format: .wav
                 ),

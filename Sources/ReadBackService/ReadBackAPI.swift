@@ -37,6 +37,7 @@ public struct PublicSpeechRequest: Decodable, Sendable {
     public let voice: String?
     public let responseFormat: AudioFormat?
     public let speed: Double?
+    public let languageCode: String?
 
     private enum CodingKeys: String, CodingKey {
         case model
@@ -44,6 +45,7 @@ public struct PublicSpeechRequest: Decodable, Sendable {
         case voice
         case responseFormat = "response_format"
         case speed
+        case languageCode = "lang_code"
     }
 }
 
@@ -53,6 +55,7 @@ public final class ReadBackAPI: @unchecked Sendable {
     private let backend: MLXBackendClient
     private let coordinator: SpeechCoordinator
     private let downloader: HuggingFaceModelDownloader
+    private let speechSettings: SpeechSettingsStore
     private let encoder = JSONEncoder()
 
     public init(
@@ -60,13 +63,15 @@ public final class ReadBackAPI: @unchecked Sendable {
         modelStore: ModelStore,
         backend: MLXBackendClient,
         coordinator: SpeechCoordinator,
-        downloader: HuggingFaceModelDownloader = .init()
+        downloader: HuggingFaceModelDownloader = .init(),
+        speechSettings: SpeechSettingsStore? = nil
     ) {
         self.configuration = configuration
         self.modelStore = modelStore
         self.backend = backend
         self.coordinator = coordinator
         self.downloader = downloader
+        self.speechSettings = speechSettings ?? SpeechSettingsStore(configuration: configuration)
     }
 
     public func makeRouter() -> Router<BasicWebSocketRequestContext> {
@@ -125,12 +130,17 @@ public final class ReadBackAPI: @unchecked Sendable {
 
         router.post("/play") { [self] request, context -> ActionResponse in
             let publicRequest = try await request.decode(as: PublicSpeechRequest.self, context: context)
+            let defaults = await speechSettings.current()
+            let voice = publicRequest.voice ?? defaults.voice
             let id = UUID().uuidString
             try await coordinator.startSession(id: id) { _ in }
             _ = try await coordinator.enqueue(
                 text: publicRequest.input,
-                voice: publicRequest.voice ?? configuration.defaultVoice,
-                speed: publicRequest.speed ?? configuration.defaultSpeed
+                voice: voice,
+                languageCode: publicRequest.languageCode
+                    ?? KokoroVoiceCatalog.languageCode(forVoiceID: voice)
+                    ?? defaults.languageCode,
+                speed: publicRequest.speed ?? defaults.synthesisSpeed
             )
             await coordinator.finishInput()
             await coordinator.waitUntilFinished(sessionID: id)
@@ -140,6 +150,8 @@ public final class ReadBackAPI: @unchecked Sendable {
         router.ws("/v1/readback/stream") { [self] inbound, outbound, _ in
             let sessionID = UUID().uuidString
             var chunker = StreamingTextChunker()
+            let settings = await speechSettings.current()
+            var pauseBefore = 0.0
             do {
                 try await coordinator.startSession(id: sessionID) { [encoder] event in
                     guard let data = try? encoder.encode(event),
@@ -153,11 +165,23 @@ public final class ReadBackAPI: @unchecked Sendable {
                     let event = try JSONDecoder().decode(ReadBackClientEvent.self, from: Data(text.utf8))
                     switch event {
                     case .textAppend(let text):
-                        try await enqueue(chunker.append(text))
+                        pauseBefore = try await enqueue(
+                            chunker.append(text),
+                            settings: settings,
+                            pauseBefore: pauseBefore
+                        )
                     case .inputCommit:
-                        try await enqueue(chunker.flush().map { [$0] } ?? [])
+                        pauseBefore = try await enqueue(
+                            chunker.flush().map { [$0] } ?? [],
+                            settings: settings,
+                            pauseBefore: pauseBefore
+                        )
                     case .inputDone:
-                        try await enqueue(chunker.flush().map { [$0] } ?? [])
+                        _ = try await enqueue(
+                            chunker.flush().map { [$0] } ?? [],
+                            settings: settings,
+                            pauseBefore: pauseBefore
+                        )
                         await coordinator.finishInput()
                     case .playbackCancel:
                         await coordinator.cancel()
@@ -201,32 +225,46 @@ public final class ReadBackAPI: @unchecked Sendable {
         let modelID = request.model ?? configuration.model.id
         try requireSupportedModel(modelID)
         let modelPath = try await modelStore.directoryURL(for: modelID)
+        let defaults = await speechSettings.current()
+        let voice = request.voice ?? defaults.voice
         return try await backend.synthesize(
             SpeechRequest(
                 input: request.input,
-                voice: request.voice ?? configuration.defaultVoice,
-                speed: request.speed ?? configuration.defaultSpeed,
+                voice: voice,
+                languageCode: request.languageCode
+                    ?? KokoroVoiceCatalog.languageCode(forVoiceID: voice)
+                    ?? defaults.languageCode,
+                speed: request.speed ?? defaults.synthesisSpeed,
                 format: request.responseFormat ?? .wav
             ),
             modelPath: modelPath
         )
     }
 
-    private func enqueue(_ segments: [String]) async throws {
-        for text in segments {
+    private func enqueue(
+        _ segments: [StreamedTextChunk],
+        settings: SpeechSettings,
+        pauseBefore: Double
+    ) async throws -> Double {
+        var nextPause = pauseBefore
+        for segment in segments {
             while true {
                 do {
                     try await coordinator.enqueue(
-                        text: text,
-                        voice: configuration.defaultVoice,
-                        speed: configuration.defaultSpeed
+                        text: segment.text,
+                        voice: settings.voice,
+                        languageCode: settings.languageCode,
+                        speed: settings.synthesisSpeed,
+                        pauseBefore: nextPause
                     )
+                    nextPause = segment.endsParagraph ? settings.paragraphPause : 0
                     break
                 } catch SpeechCoordinatorError.queueLimitExceeded {
                     try await Task.sleep(for: .milliseconds(25))
                 }
             }
         }
+        return nextPause
     }
 
     private func requireSupportedModel(_ id: String) throws {

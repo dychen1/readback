@@ -21,7 +21,7 @@ public struct RuntimePaths: Equatable, Sendable {
         let support = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
-        )[0].appendingPathComponent("ReadBackVoice", isDirectory: true)
+        )[0].appendingPathComponent("ReadBack", isDirectory: true)
 
         if let override = environment["READBACK_MODELS_DIR"], !override.isEmpty {
             return RuntimePaths(
@@ -57,8 +57,20 @@ public struct AppConfigurationStore: Sendable {
     public init() {}
 
     public func loadOrCreate(at url: URL, modelsDirectory: URL) throws -> AppConfiguration {
+        try migrateLegacyConfigurationIfNeeded(to: url)
         if FileManager.default.fileExists(atPath: url.path) {
-            return try JSONDecoder().decode(AppConfiguration.self, from: Data(contentsOf: url))
+            var configuration = try JSONDecoder().decode(
+                AppConfiguration.self,
+                from: Data(contentsOf: url)
+            )
+            let currentDefault = modelsDirectory.standardizedFileURL
+            if configuration.modelDirectory.standardizedFileURL != currentDefault,
+               !FileManager.default.fileExists(atPath: configuration.modelDirectory.path)
+            {
+                configuration.modelDirectory = currentDefault
+                try save(configuration, at: url)
+            }
+            return configuration
         }
         let configuration = AppConfiguration.default(modelDirectory: modelsDirectory)
         try FileManager.default.createDirectory(
@@ -77,5 +89,24 @@ public struct AppConfigurationStore: Sendable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(configuration).write(to: url, options: .atomic)
+    }
+
+    private func migrateLegacyConfigurationIfNeeded(to url: URL) throws {
+        guard !FileManager.default.fileExists(atPath: url.path),
+              url.deletingLastPathComponent().lastPathComponent == "ReadBack"
+        else { return }
+
+        let legacyURL = url
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("ReadBackVoice", isDirectory: true)
+            .appendingPathComponent("config.json")
+        guard FileManager.default.fileExists(atPath: legacyURL.path) else { return }
+
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.copyItem(at: legacyURL, to: url)
     }
 }

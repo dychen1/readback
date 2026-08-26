@@ -8,14 +8,72 @@ public enum AudioFormat: String, Codable, Equatable, Sendable {
 public struct SpeechRequest: Codable, Equatable, Sendable {
     public let input: String
     public let voice: String
+    public let languageCode: String
     public let speed: Double
     public let format: AudioFormat
 
-    public init(input: String, voice: String, speed: Double, format: AudioFormat) {
+    public init(
+        input: String,
+        voice: String,
+        languageCode: String,
+        speed: Double,
+        format: AudioFormat
+    ) {
         self.input = input
         self.voice = voice
+        self.languageCode = languageCode
         self.speed = speed
         self.format = format
+    }
+}
+
+public struct SpeechSettings: Equatable, Sendable {
+    public let voice: String
+    public let languageCode: String
+    public let synthesisSpeed: Double
+    public let paragraphPause: Double
+
+    public init(
+        voice: String,
+        languageCode: String,
+        synthesisSpeed: Double,
+        paragraphPause: Double
+    ) {
+        self.voice = voice
+        self.languageCode = languageCode
+        self.synthesisSpeed = synthesisSpeed
+        self.paragraphPause = ParagraphPause.clamped(paragraphPause)
+    }
+
+    public init(configuration: AppConfiguration) {
+        self.init(
+            voice: configuration.defaultVoice,
+            languageCode: KokoroVoiceCatalog.languageCode(
+                forVoiceID: configuration.defaultVoice
+            ) ?? "a",
+            synthesisSpeed: configuration.defaultSpeed,
+            paragraphPause: configuration.paragraphPause
+        )
+    }
+}
+
+public actor SpeechSettingsStore {
+    private var settings: SpeechSettings
+
+    public init(_ settings: SpeechSettings) {
+        self.settings = settings
+    }
+
+    public init(configuration: AppConfiguration) {
+        self.init(SpeechSettings(configuration: configuration))
+    }
+
+    public func current() -> SpeechSettings {
+        settings
+    }
+
+    public func update(_ settings: SpeechSettings) {
+        self.settings = settings
     }
 }
 

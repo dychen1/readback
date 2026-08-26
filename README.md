@@ -1,12 +1,14 @@
-# ReadBack Voice
+# ReadBack
 
 A native macOS menu-bar service that turns streamed text into local speech with Kokoro and MLX.
 
 ## Overview
 
-ReadBack Voice runs text-to-speech on an Apple Silicon Mac. Start the menu-bar app, download the pinned Kokoro model, then pipe text into `voicepipe` or call the local HTTP API. After setup, text, inference, audio, and playback stay on the Mac.
+ReadBack runs text-to-speech on an Apple Silicon Mac. Start the menu-bar app, download the pinned Kokoro model, then pipe text into `voicepipe` or call the local HTTP API. After setup, text, inference, audio, and playback stay on the Mac.
 
-The project provides three parts:
+## Executive summary
+
+ReadBack provides three parts:
 
 - A native Swift menu-bar app that owns the local service and model backend.
 - A loopback HTTP and WebSocket API for speech generation and playback.
@@ -41,10 +43,10 @@ From the repository root:
 Scripts/build-app
 ```
 
-This creates an ad hoc signed development app at `dist/ReadBack Voice.app`. Open it with:
+This creates an ad hoc signed development app at `dist/ReadBack.app`. Open it with:
 
 ```sh
-open "dist/ReadBack Voice.app"
+open "dist/ReadBack.app"
 ```
 
 The waveform icon will appear in the macOS menu bar.
@@ -56,10 +58,22 @@ more to resume. If the clipboard text changes, the shortcut stops the current
 read-back and starts the new text from the beginning. You can use the same
 dynamic action from the menu-bar app.
 
-Choose **Playback Speed** in the menu to change the current or next
-read-back from `0.5×` through `2×`. Changes take effect at the current
+Use the **Playback Speed** slider to change the current or next read-back from
+`0.5×` through `2×` in `0.25×` steps. Changes take effect at the current
 audio position without generating the speech again, including while paused.
-The app saves the selected rate for later launches.
+The default is `1×`, and the app saves the selected rate for later launches.
+
+Choose **Voice** to select a short curated list for each supported language.
+Each item shows only the voice name. Choosing any voice selects it and
+immediately says “test, hello world” as a preview.
+
+Use the **Paragraph Pause** slider to add a saved gap from `0 ms` through
+`2,000 ms` in `50 ms` steps. The default is `150 ms`. Pause and resume preserve
+the unused part of a paragraph gap.
+
+Before synthesis, ReadBack removes common Markdown formatting such as headings,
+emphasis, list markers, quotes, links, tables, and code delimiters. It speaks the
+readable content and keeps paragraph breaks.
 
 | Current state | Clipboard | `⌥⌘R` action |
 | --- | --- | --- |
@@ -88,8 +102,8 @@ The first start may also download Python 3.12 and the pinned Python packages use
 In another terminal:
 
 ```sh
-printf 'Hello from ReadBack Voice.' |
-  "dist/ReadBack Voice.app/Contents/MacOS/voicepipe"
+printf 'Hello from ReadBack.' |
+  "dist/ReadBack.app/Contents/MacOS/voicepipe"
 ```
 
 `voicepipe` exits after the service has played all submitted text.
@@ -134,7 +148,9 @@ The menu-bar app provides:
 - Current service status and public API address
 - Start and stop controls
 - Read Clipboard with the global `⌥⌘R` shortcut
-- Live playback-speed presets from `0.5×` through `2×`
+- Curated voice choices grouped by language, plus voice preview
+- Paragraph-pause slider from `0 ms` through `2,000 ms` in `50 ms` steps
+- Live playback-speed slider from `0.5×` through `2×` in `0.25×` steps
 - Kokoro download and reload
 - Launch at login when running from the app bundle
 - Quit with managed backend shutdown
@@ -150,7 +166,7 @@ stdin or API client
 voicepipe or HTTP request
         |
         v
-ReadBack Voice on 127.0.0.1:51280
+ReadBack on 127.0.0.1:51280
         |
         +-- text chunking and playback queue
         |
@@ -166,7 +182,7 @@ WAV bytes in memory -> AVFoundation playback
 
 | Process | Address | Purpose |
 | --- | --- | --- |
-| ReadBack Voice | `127.0.0.1:51280` | Public HTTP and WebSocket API |
+| ReadBack | `127.0.0.1:51280` | Public HTTP and WebSocket API |
 | MLX-Audio | `127.0.0.1:51281` | App-managed model server |
 
 The Swift app owns both the public service and the MLX-Audio child process. The public service uses Hummingbird. The backend runs:
@@ -210,6 +226,7 @@ curl \
     "model": "kokoro",
     "input": "Save this speech to a WAV file.",
     "voice": "af_heart",
+    "lang_code": "a",
     "speed": 1.0,
     "response_format": "wav"
   }' \
@@ -284,7 +301,7 @@ Server events contain a `session_id`. Speech events may contain a `sequence`; er
 
 ## Model and local files
 
-ReadBack Voice currently supports one model:
+ReadBack currently supports one model:
 
 | ID | Repository | Revision | Default voice |
 | --- | --- | --- | --- |
@@ -304,23 +321,23 @@ uvx --from huggingface-hub hf download \
 When you run the built app outside the repository, it uses:
 
 ```text
-~/Library/Application Support/ReadBackVoice/models
+~/Library/Application Support/ReadBack/models
 ```
 
-Other local files live under `~/Library/Application Support/ReadBackVoice/`:
+Other local files live under `~/Library/Application Support/ReadBack/`:
 
 | File | Purpose |
 | --- | --- |
-| `config.json` | Hosts, ports, model path, default voice, synthesis speed, and playback rate |
+| `config.json` | Hosts, ports, model path, voice, synthesis speed, paragraph pause, and playback rate |
 | `backend.log` | MLX-Audio standard output and errors |
 
-ReadBack Voice stores configuration in JSON. It does not use SQLAlchemy or any other database.
+ReadBack stores configuration in JSON. It does not use SQLAlchemy or any other database.
 
 Set a custom model root before the app creates its first config file:
 
 ```sh
 READBACK_MODELS_DIR=/absolute/path/to/models \
-  Scripts/swiftw run readback-voice
+  Scripts/swiftw run readback
 ```
 
 ## Privacy and network access
@@ -383,7 +400,7 @@ The build script creates an ad hoc signed development bundle. It does not produc
 
 ## Upstream projects
 
-ReadBack Voice builds on:
+ReadBack builds on:
 
 - [MLX-Audio](https://github.com/Blaizzy/mlx-audio) for Apple Silicon audio inference and the model server
 - [Kokoro](https://huggingface.co/mlx-community/Kokoro-82M-bf16) for text-to-speech
@@ -396,4 +413,4 @@ The README structure follows patterns from [MLX-Audio](https://github.com/Blaizz
 
 ## License
 
-ReadBack Voice is available under the [MIT License](LICENSE).
+ReadBack is available under the [MIT License](LICENSE).

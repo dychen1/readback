@@ -3,7 +3,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "ReadBackVoice",
+    name: "ReadBack",
     platforms: [
         .macOS(.v14)
     ],
@@ -12,7 +12,7 @@ let package = Package(
         .library(name: "ReadBackService", targets: ["ReadBackService"]),
         .library(name: "ReadBackMac", targets: ["ReadBackMac"]),
         .library(name: "VoicePipeKit", targets: ["VoicePipeKit"]),
-        .executable(name: "readback-voice", targets: ["ReadBackVoice"]),
+        .executable(name: "readback", targets: ["ReadBackVoice"]),
         .executable(name: "voicepipe", targets: ["voicepipe"]),
         .executable(name: "readback-tests", targets: ["ReadBackTests"]),
     ],
