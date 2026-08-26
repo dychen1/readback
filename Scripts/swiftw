@@ -1,0 +1,43 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+script_dir="${0:A:h}"
+project_dir="${script_dir:h}"
+cache_dir="${project_dir}/.build/readback-cache"
+
+mkdir -p "${cache_dir}/clang" "${cache_dir}/swiftpm" "${cache_dir}/config" "${cache_dir}/security"
+
+export CLANG_MODULE_CACHE_PATH="${cache_dir}/clang"
+export SWIFTPM_MODULECACHE_OVERRIDE="${cache_dir}/clang"
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0=core.hooksPath
+export GIT_CONFIG_VALUE_0=/dev/null
+
+if (( $# == 0 )); then
+    print -u2 "usage: Scripts/swiftw <build|run> [arguments...]"
+    exit 64
+fi
+
+command_name="$1"
+shift
+
+case "${command_name}" in
+    build|run)
+        exec swift "${command_name}" \
+            --disable-sandbox \
+            --disable-dependency-cache \
+            --cache-path "${cache_dir}/swiftpm" \
+            --config-path "${cache_dir}/config" \
+            --security-path "${cache_dir}/security" \
+            -Xswiftc -Xfrontend \
+            -Xswiftc -interface-compiler-version \
+            -Xswiftc -Xfrontend \
+            -Xswiftc 6.3.2 \
+            "$@"
+        ;;
+    *)
+        print -u2 "unsupported Swift command: ${command_name}"
+        exit 64
+        ;;
+esac
