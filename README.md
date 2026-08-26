@@ -2,7 +2,7 @@
 
 A native macOS menu-bar service that turns streamed text into local speech with Kokoro and MLX.
 
-## TL;DR
+## Overview
 
 ReadBack runs text-to-speech on an Apple Silicon Mac. Start the menu-bar app, download the pinned Kokoro model, then pipe text into `voicepipe` or call the local HTTP API. After setup, text, inference, audio, and playback stay on the Mac.
 
