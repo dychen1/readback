@@ -5,13 +5,13 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleExecutable</key>
-    <string>readback-voice</string>
+    <string>readback</string>
     <key>CFBundleIdentifier</key>
-    <string>ai.sanrin.readback-voice</string>
+    <string>ai.sanrin.readback</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>ReadBack Voice</string>
+    <string>ReadBack</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

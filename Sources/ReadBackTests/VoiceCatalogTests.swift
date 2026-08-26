@@ -23,27 +23,18 @@ func voiceCatalogTests() -> [TestCase] {
 
             try expectEqual(
                 groups.map(\.name),
-                ["Recommended English", "English — Male", "Japanese"],
+                ["English", "Japanese"],
                 "available voice groups"
             )
             try expectEqual(
                 groups[0].voices.map(\.id),
-                ["af_heart", "af_bella", "af_nicole", "bf_emma"],
-                "recommended English voices"
+                ["af_heart", "af_bella", "af_nicole", "bf_emma", "am_fenrir", "am_michael"],
+                "curated English voices"
             )
             try expectEqual(
                 groups[1].voices.map(\.id),
-                ["am_fenrir", "am_michael"],
-                "recommended English male voices"
-            )
-            try expectEqual(
-                groups[2].voices.map(\.id),
                 ["jf_alpha", "jf_gongitsune", "jf_tebukuro", "jm_kumo"],
                 "curated Japanese voices"
-            )
-            try expect(
-                groups.allSatisfy { $0.voices.count <= 4 },
-                "no language group may expose more than four voices"
             )
         },
         TestCase(name: "voice catalog maps each curated voice to its language code") {

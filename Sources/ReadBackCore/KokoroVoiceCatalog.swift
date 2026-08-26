@@ -3,13 +3,11 @@ import Foundation
 public struct KokoroVoice: Equatable, Hashable, Identifiable, Sendable {
     public let id: String
     public let name: String
-    public let detail: String
     public let languageCode: String
 
-    public init(id: String, name: String, detail: String, languageCode: String) {
+    public init(id: String, name: String, languageCode: String) {
         self.id = id
         self.name = name
-        self.detail = detail
         self.languageCode = languageCode
     }
 }
@@ -27,73 +25,68 @@ public struct KokoroVoiceGroup: Equatable, Sendable {
 public enum KokoroVoiceCatalog {
     public static let curatedGroups: [KokoroVoiceGroup] = [
         KokoroVoiceGroup(
-            name: "Recommended English",
+            name: "English",
             voices: [
-                voice("af_heart", "Heart", "American · Female", "a"),
-                voice("af_bella", "Bella", "American · Female", "a"),
-                voice("af_nicole", "Nicole", "American · Female", "a"),
-                voice("bf_emma", "Emma", "British · Female", "b"),
-            ]
-        ),
-        KokoroVoiceGroup(
-            name: "English — Male",
-            voices: [
-                voice("am_fenrir", "Fenrir", "American · Male", "a"),
-                voice("am_michael", "Michael", "American · Male", "a"),
+                voice("af_heart", "Heart", "a"),
+                voice("af_bella", "Bella", "a"),
+                voice("af_nicole", "Nicole", "a"),
+                voice("bf_emma", "Emma", "b"),
+                voice("am_fenrir", "Fenrir", "a"),
+                voice("am_michael", "Michael", "a"),
             ]
         ),
         KokoroVoiceGroup(
             name: "Japanese",
             voices: [
-                voice("jf_alpha", "Alpha", "Female", "j"),
-                voice("jf_gongitsune", "Gongitsune", "Female", "j"),
-                voice("jf_tebukuro", "Tebukuro", "Female", "j"),
-                voice("jm_kumo", "Kumo", "Male", "j"),
+                voice("jf_alpha", "Alpha", "j"),
+                voice("jf_gongitsune", "Gongitsune", "j"),
+                voice("jf_tebukuro", "Tebukuro", "j"),
+                voice("jm_kumo", "Kumo", "j"),
             ]
         ),
         KokoroVoiceGroup(
             name: "Mandarin Chinese",
             voices: [
-                voice("zf_xiaoxiao", "Xiaoxiao", "Female", "z"),
-                voice("zf_xiaoyi", "Xiaoyi", "Female", "z"),
-                voice("zm_yunxi", "Yunxi", "Male", "z"),
-                voice("zm_yunyang", "Yunyang", "Male", "z"),
+                voice("zf_xiaoxiao", "Xiaoxiao", "z"),
+                voice("zf_xiaoyi", "Xiaoyi", "z"),
+                voice("zm_yunxi", "Yunxi", "z"),
+                voice("zm_yunyang", "Yunyang", "z"),
             ]
         ),
         KokoroVoiceGroup(
             name: "Spanish",
             voices: [
-                voice("ef_dora", "Dora", "Female", "e"),
-                voice("em_alex", "Alex", "Male", "e"),
-                voice("em_santa", "Santa", "Male", "e"),
+                voice("ef_dora", "Dora", "e"),
+                voice("em_alex", "Alex", "e"),
+                voice("em_santa", "Santa", "e"),
             ]
         ),
         KokoroVoiceGroup(
             name: "French",
-            voices: [voice("ff_siwis", "Siwis", "Female", "f")]
+            voices: [voice("ff_siwis", "Siwis", "f")]
         ),
         KokoroVoiceGroup(
             name: "Hindi",
             voices: [
-                voice("hf_alpha", "Alpha", "Female", "h"),
-                voice("hf_beta", "Beta", "Female", "h"),
-                voice("hm_omega", "Omega", "Male", "h"),
-                voice("hm_psi", "Psi", "Male", "h"),
+                voice("hf_alpha", "Alpha", "h"),
+                voice("hf_beta", "Beta", "h"),
+                voice("hm_omega", "Omega", "h"),
+                voice("hm_psi", "Psi", "h"),
             ]
         ),
         KokoroVoiceGroup(
             name: "Italian",
             voices: [
-                voice("if_sara", "Sara", "Female", "i"),
-                voice("im_nicola", "Nicola", "Male", "i"),
+                voice("if_sara", "Sara", "i"),
+                voice("im_nicola", "Nicola", "i"),
             ]
         ),
         KokoroVoiceGroup(
             name: "Brazilian Portuguese",
             voices: [
-                voice("pf_dora", "Dora", "Female", "p"),
-                voice("pm_alex", "Alex", "Male", "p"),
-                voice("pm_santa", "Santa", "Male", "p"),
+                voice("pf_dora", "Dora", "p"),
+                voice("pm_alex", "Alex", "p"),
+                voice("pm_santa", "Santa", "p"),
             ]
         ),
     ]
@@ -134,9 +127,8 @@ public enum KokoroVoiceCatalog {
     private static func voice(
         _ id: String,
         _ name: String,
-        _ detail: String,
         _ languageCode: String
     ) -> KokoroVoice {
-        KokoroVoice(id: id, name: name, detail: detail, languageCode: languageCode)
+        KokoroVoice(id: id, name: name, languageCode: languageCode)
     }
 }

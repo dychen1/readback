@@ -6,11 +6,11 @@ import ServiceManagement
 import SwiftUI
 
 @main
-struct ReadBackVoiceApp: App {
+struct ReadBackApp: App {
     @StateObject private var controller = ServiceController()
 
     var body: some Scene {
-        MenuBarExtra("ReadBack Voice", systemImage: controller.isRunning ? "waveform.circle.fill" : "waveform.circle") {
+        MenuBarExtra("ReadBack", systemImage: controller.isRunning ? "waveform.circle.fill" : "waveform.circle") {
             Text(controller.status)
             Text("127.0.0.1:\(controller.configuration.publicPort)")
                 .font(.caption)
@@ -40,12 +40,9 @@ struct ReadBackVoiceApp: App {
                                 controller.setVoice(voice)
                             } label: {
                                 if voice.id == controller.selectedVoiceID {
-                                    Label(
-                                        "\(voice.name) — \(voice.detail)",
-                                        systemImage: "checkmark"
-                                    )
+                                    Label(voice.name, systemImage: "checkmark")
                                 } else {
-                                    Text("\(voice.name) — \(voice.detail)")
+                                    Text(voice.name)
                                 }
                             }
                         }
@@ -53,11 +50,6 @@ struct ReadBackVoiceApp: App {
                 }
             }
             .disabled(controller.voiceGroups.isEmpty)
-
-            Button("Preview Voice") {
-                controller.previewVoice()
-            }
-            .disabled(!controller.modelInstalled)
 
             Picker(
                 "Paragraph Pause",
@@ -332,17 +324,13 @@ final class ServiceController: ObservableObject {
     }
 
     func setVoice(_ voice: KokoroVoice) {
-        guard voice.id != selectedVoiceID,
-              voiceGroups.contains(where: { $0.voices.contains(voice) })
-        else { return }
+        guard voiceGroups.contains(where: { $0.voices.contains(voice) }) else { return }
 
-        configuration.setDefaultVoice(voice.id)
-        selectedVoiceID = voice.id
-        saveSpeechConfiguration(status: "Voice: \(voice.name)")
-        refreshSpeechSettingsAndRestartIfNeeded()
-    }
-
-    func previewVoice() {
+        if voice.id != selectedVoiceID {
+            configuration.setDefaultVoice(voice.id)
+            selectedVoiceID = voice.id
+            saveSpeechConfiguration(status: "Voice: \(voice.name)")
+        }
         startClipboardSpeech("test, hello world", completionStatus: "Voice preview finished")
     }
 
