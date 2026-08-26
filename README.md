@@ -61,14 +61,14 @@ dynamic action from the menu-bar app.
 Use the **Playback Speed** slider to change the current or next read-back from
 `0.5×` through `2×` in `0.25×` steps. Changes take effect at the current
 audio position without generating the speech again, including while paused.
-The app saves the selected rate for later launches.
+The default is `1×`, and the app saves the selected rate for later launches.
 
 Choose **Voice** to select a short curated list for each supported language.
 Each item shows only the voice name. Choosing any voice selects it and
 immediately says “test, hello world” as a preview.
 
 Use the **Paragraph Pause** slider to add a saved gap from `0 ms` through
-`2,000 ms` in `50 ms` steps. The default is `500 ms`. Pause and resume preserve
+`2,000 ms` in `50 ms` steps. The default is `150 ms`. Pause and resume preserve
 the unused part of a paragraph gap.
 
 Before synthesis, ReadBack removes common Markdown formatting such as headings,

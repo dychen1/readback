@@ -1,5 +1,5 @@
 public enum ParagraphPause {
-    public static let `default` = 0.5
+    public static let `default` = 0.15
     public static let minimum = 0.0
     public static let maximum = 2.0
     public static let step = 0.05

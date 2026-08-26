@@ -27,7 +27,7 @@ func configurationTests() -> [TestCase] {
             try expectEqual(config.defaultVoice, "af_heart", "default voice")
             try expectEqual(config.defaultSpeed, 1.0, "default speed")
             try expectEqual(config.playbackRate, 1.0, "default playback rate")
-            try expectEqual(config.paragraphPause, 0.5, "default paragraph pause")
+            try expectEqual(config.paragraphPause, 0.15, "default paragraph pause")
         },
         TestCase(name: "configuration survives JSON round trip") {
             let original = AppConfiguration.default(
@@ -62,7 +62,7 @@ func configurationTests() -> [TestCase] {
 
             let decoded = try JSONDecoder().decode(AppConfiguration.self, from: legacyData)
 
-            try expectEqual(decoded.paragraphPause, 0.5, "legacy paragraph pause")
+            try expectEqual(decoded.paragraphPause, 0.15, "legacy paragraph pause")
         },
         TestCase(name: "configuration store persists a changed playback rate") {
             let directory = FileManager.default.temporaryDirectory
