@@ -20,7 +20,9 @@ public actor SpeechCoordinator {
         let sequence: Int
         let text: String
         let voice: String
+        let languageCode: String
         let speed: Double
+        let pauseBefore: Double
     }
 
     private let synthesizer: any SpeechSynthesizing
@@ -81,7 +83,13 @@ public actor SpeechCoordinator {
     }
 
     @discardableResult
-    public func enqueue(text: String, voice: String, speed: Double) async throws -> Int {
+    public func enqueue(
+        text: String,
+        voice: String,
+        languageCode: String = "a",
+        speed: Double,
+        pauseBefore: Double = 0
+    ) async throws -> Int {
         guard let sessionID, let eventSink else {
             throw SpeechCoordinatorError.noActiveSession
         }
@@ -101,7 +109,14 @@ public actor SpeechCoordinator {
         nextSequence += 1
         pendingCharacters += normalized.count
         queue.append(
-            Segment(sequence: sequence, text: normalized, voice: voice, speed: speed)
+            Segment(
+                sequence: sequence,
+                text: normalized,
+                voice: voice,
+                languageCode: languageCode,
+                speed: speed,
+                pauseBefore: ParagraphPause.clamped(pauseBefore)
+            )
         )
         await eventSink(
             ReadBackServerEvent(type: .speechQueued, sessionID: sessionID, sequence: sequence)
@@ -205,6 +220,14 @@ public actor SpeechCoordinator {
             }
 
             let segment = queue.removeFirst()
+            do {
+                try await waitForParagraphPause(segment.pauseBefore)
+            } catch is CancellationError {
+                return
+            } catch {
+                return
+            }
+            guard sessionID == expectedSessionID, !Task.isCancelled else { return }
             await sink(
                 ReadBackServerEvent(
                     type: .speechStarted,
@@ -218,6 +241,7 @@ public actor SpeechCoordinator {
                     SpeechRequest(
                         input: segment.text,
                         voice: segment.voice,
+                        languageCode: segment.languageCode,
                         speed: segment.speed,
                         format: .wav
                     ),
@@ -288,6 +312,19 @@ public actor SpeechCoordinator {
     private func waitUntilResumed() async {
         while playbackPaused {
             await withCheckedContinuation { pauseWaiters.append($0) }
+        }
+    }
+
+    private func waitForParagraphPause(_ seconds: Double) async throws {
+        var remainingMilliseconds = Int((seconds * 1_000).rounded())
+        while remainingMilliseconds > 0 {
+            await waitUntilResumed()
+            try Task.checkCancellation()
+            let slice = min(remainingMilliseconds, 10)
+            try await Task.sleep(for: .milliseconds(slice))
+            if !playbackPaused {
+                remainingMilliseconds -= slice
+            }
         }
     }
 

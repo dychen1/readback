@@ -63,6 +63,7 @@ public final class MLXBackendClient: SpeechSynthesizing, @unchecked Sendable {
             model: modelPath.path,
             input: request.input,
             voice: resolvedVoice(request.voice, modelPath: modelPath),
+            languageCode: request.languageCode,
             responseFormat: request.format,
             speed: request.speed
         )
@@ -108,6 +109,7 @@ private struct BackendSpeechRequest: Encodable {
     let model: String
     let input: String
     let voice: String
+    let languageCode: String
     let responseFormat: AudioFormat
     let speed: Double
 
@@ -115,6 +117,7 @@ private struct BackendSpeechRequest: Encodable {
         case model
         case input
         case voice
+        case languageCode = "lang_code"
         case responseFormat = "response_format"
         case speed
     }

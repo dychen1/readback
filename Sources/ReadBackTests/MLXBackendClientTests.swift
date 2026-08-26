@@ -60,13 +60,20 @@ func mlxBackendClientTests() -> [TestCase] {
                 )
                 try expectEqual(body["input"] as? String, "Hello", "speech input")
                 try expectEqual(body["voice"] as? String, "af_heart", "speech voice")
+                try expectEqual(body["lang_code"] as? String, "a", "speech language")
                 try expectEqual(body["response_format"] as? String, "wav", "speech format")
                 try expectEqual(body["speed"] as? Double, 1.1, "speech speed")
                 return StubResponse(status: 200, body: expectedAudio, contentType: "audio/wav")
             }
 
             let clip = try await fixture.client.synthesize(
-                SpeechRequest(input: "Hello", voice: "af_heart", speed: 1.1, format: .wav),
+                SpeechRequest(
+                    input: "Hello",
+                    voice: "af_heart",
+                    languageCode: "a",
+                    speed: 1.1,
+                    format: .wav
+                ),
                 modelPath: URL(fileURLWithPath: "/tmp/models/Kokoro-82M-bf16")
             )
 
@@ -88,7 +95,13 @@ func mlxBackendClientTests() -> [TestCase] {
             }
 
             _ = try await fixture.client.synthesize(
-                SpeechRequest(input: "Hello", voice: "af_heart", speed: 1, format: .wav),
+                SpeechRequest(
+                    input: "Hello",
+                    voice: "af_heart",
+                    languageCode: "a",
+                    speed: 1,
+                    format: .wav
+                ),
                 modelPath: root
             )
         },
@@ -99,7 +112,13 @@ func mlxBackendClientTests() -> [TestCase] {
 
             do {
                 _ = try await fixture.client.synthesize(
-                    SpeechRequest(input: "Hello", voice: "af_heart", speed: 1, format: .wav),
+                    SpeechRequest(
+                        input: "Hello",
+                        voice: "af_heart",
+                        languageCode: "a",
+                        speed: 1,
+                        format: .wav
+                    ),
                     modelPath: URL(fileURLWithPath: "/tmp/model")
                 )
                 throw TestFailure(description: "upstream error should throw")

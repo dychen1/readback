@@ -1,5 +1,15 @@
 import Foundation
 
+public struct StreamedTextChunk: Equatable, Sendable {
+    public let text: String
+    public let endsParagraph: Bool
+
+    public init(text: String, endsParagraph: Bool) {
+        self.text = text
+        self.endsParagraph = endsParagraph
+    }
+}
+
 public struct StreamingTextChunker: Sendable {
     private var buffer = ""
     private let maxCharacters: Int
@@ -9,9 +19,9 @@ public struct StreamingTextChunker: Sendable {
         self.maxCharacters = maxCharacters
     }
 
-    public mutating func append(_ text: String) -> [String] {
+    public mutating func append(_ text: String) -> [StreamedTextChunk] {
         buffer.append(text)
-        var chunks: [String] = []
+        var chunks: [StreamedTextChunk] = []
 
         while let boundary = nextBoundary() {
             let rawChunk = String(buffer[..<boundary.contentEnd])
@@ -20,17 +30,19 @@ public struct StreamingTextChunker: Sendable {
 
             let chunk = rawChunk.trimmingCharacters(in: .whitespacesAndNewlines)
             if !chunk.isEmpty {
-                chunks.append(chunk)
+                chunks.append(
+                    StreamedTextChunk(text: chunk, endsParagraph: boundary.endsParagraph)
+                )
             }
         }
 
         return chunks
     }
 
-    public mutating func flush() -> String? {
+    public mutating func flush() -> StreamedTextChunk? {
         let chunk = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
         buffer.removeAll(keepingCapacity: true)
-        return chunk.isEmpty ? nil : chunk
+        return chunk.isEmpty ? nil : StreamedTextChunk(text: chunk, endsParagraph: false)
     }
 
     private func nextBoundary() -> Boundary? {
@@ -49,14 +61,18 @@ public struct StreamingTextChunker: Sendable {
             return nil
         }
         let end = buffer.index(buffer.startIndex, offsetBy: maxCharacters)
-        return Boundary(contentEnd: end, consumedEnd: end)
+        return Boundary(contentEnd: end, consumedEnd: end, endsParagraph: false)
     }
 
     private func paragraphBoundary() -> Boundary? {
         guard let range = buffer.range(of: "\n\n") else {
             return nil
         }
-        return Boundary(contentEnd: range.lowerBound, consumedEnd: range.upperBound)
+        return Boundary(
+            contentEnd: range.lowerBound,
+            consumedEnd: range.upperBound,
+            endsParagraph: true
+        )
     }
 
     private func sentenceBoundary() -> Boundary? {
@@ -66,7 +82,7 @@ public struct StreamingTextChunker: Sendable {
             let after = buffer.index(after: index)
             if ".!?".contains(character),
                after == buffer.endIndex || buffer[after].isWhitespace {
-                return Boundary(contentEnd: after, consumedEnd: after)
+                return Boundary(contentEnd: after, consumedEnd: after, endsParagraph: false)
             }
             index = after
         }
@@ -82,5 +98,6 @@ public struct StreamingTextChunker: Sendable {
     private struct Boundary {
         let contentEnd: String.Index
         let consumedEnd: String.Index
+        let endsParagraph: Bool
     }
 }

@@ -27,6 +27,7 @@ func configurationTests() -> [TestCase] {
             try expectEqual(config.defaultVoice, "af_heart", "default voice")
             try expectEqual(config.defaultSpeed, 1.0, "default speed")
             try expectEqual(config.playbackRate, 1.0, "default playback rate")
+            try expectEqual(config.paragraphPause, 0.5, "default paragraph pause")
         },
         TestCase(name: "configuration survives JSON round trip") {
             let original = AppConfiguration.default(
@@ -50,6 +51,19 @@ func configurationTests() -> [TestCase] {
 
             try expectEqual(decoded.playbackRate, 1.0, "legacy playback rate")
         },
+        TestCase(name: "configuration defaults paragraph pause when loading an older file") {
+            let original = AppConfiguration.default(
+                modelDirectory: URL(fileURLWithPath: "/tmp/legacy-models")
+            )
+            let data = try JSONEncoder().encode(original)
+            var object = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+            object.removeValue(forKey: "paragraphPause")
+            let legacyData = try JSONSerialization.data(withJSONObject: object)
+
+            let decoded = try JSONDecoder().decode(AppConfiguration.self, from: legacyData)
+
+            try expectEqual(decoded.paragraphPause, 0.5, "legacy paragraph pause")
+        },
         TestCase(name: "configuration store persists a changed playback rate") {
             let directory = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -68,6 +82,70 @@ func configurationTests() -> [TestCase] {
             )
 
             try expectEqual(loaded.playbackRate, 1.75, "persisted playback rate")
+        },
+        TestCase(name: "configuration store persists voice and paragraph pause changes") {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let file = directory.appendingPathComponent("config.json")
+            var configuration = AppConfiguration.default(
+                modelDirectory: directory.appendingPathComponent("models")
+            )
+            configuration.setDefaultVoice("bf_emma")
+            configuration.setParagraphPause(1.5)
+            let store = AppConfigurationStore()
+
+            try store.save(configuration, at: file)
+            let loaded = try store.loadOrCreate(
+                at: file,
+                modelsDirectory: directory.appendingPathComponent("unused")
+            )
+
+            try expectEqual(loaded.defaultVoice, "bf_emma", "persisted voice")
+            try expectEqual(loaded.paragraphPause, 1.5, "persisted paragraph pause")
+        },
+        TestCase(name: "speech settings use the selected voice language and pause") {
+            var configuration = AppConfiguration.default(
+                modelDirectory: URL(fileURLWithPath: "/tmp/models")
+            )
+            configuration.setDefaultVoice("bf_emma")
+            configuration.setParagraphPause(0.75)
+
+            let settings = SpeechSettings(configuration: configuration)
+
+            try expectEqual(settings.voice, "bf_emma", "speech settings voice")
+            try expectEqual(settings.languageCode, "b", "speech settings language")
+            try expectEqual(settings.paragraphPause, 0.75, "speech settings paragraph pause")
+        },
+        TestCase(name: "configuration store migrates a missing model root to the current default") {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let file = directory.appendingPathComponent("support/config.json")
+            let missingRoot = directory.appendingPathComponent("old-name/models")
+            let currentRoot = directory.appendingPathComponent("new-name/models")
+            var configuration = AppConfiguration.default(modelDirectory: missingRoot)
+            configuration.setPlaybackRate(1.5)
+            let store = AppConfigurationStore()
+            try store.save(configuration, at: file)
+
+            let loaded = try store.loadOrCreate(at: file, modelsDirectory: currentRoot)
+            let persisted = try JSONDecoder().decode(
+                AppConfiguration.self,
+                from: Data(contentsOf: file)
+            )
+
+            try expectEqual(
+                loaded.modelDirectory,
+                currentRoot.standardizedFileURL,
+                "migrated model root"
+            )
+            try expectEqual(
+                persisted.modelDirectory,
+                currentRoot.standardizedFileURL,
+                "persisted migrated model root"
+            )
+            try expectEqual(loaded.playbackRate, 1.5, "other settings survive migration")
         },
     ]
 }

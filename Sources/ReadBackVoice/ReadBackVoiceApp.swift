@@ -32,6 +32,45 @@ struct ReadBackVoiceApp: App {
                 controller.readClipboard()
             }
 
+            Menu("Voice: \(controller.selectedVoiceName)") {
+                ForEach(controller.voiceGroups, id: \.name) { group in
+                    Section(group.name) {
+                        ForEach(group.voices) { voice in
+                            Button {
+                                controller.setVoice(voice)
+                            } label: {
+                                if voice.id == controller.selectedVoiceID {
+                                    Label(
+                                        "\(voice.name) — \(voice.detail)",
+                                        systemImage: "checkmark"
+                                    )
+                                } else {
+                                    Text("\(voice.name) — \(voice.detail)")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .disabled(controller.voiceGroups.isEmpty)
+
+            Button("Preview Voice") {
+                controller.previewVoice()
+            }
+            .disabled(!controller.modelInstalled)
+
+            Picker(
+                "Paragraph Pause",
+                selection: Binding(
+                    get: { controller.paragraphPause },
+                    set: { controller.setParagraphPause($0) }
+                )
+            ) {
+                ForEach(ParagraphPause.presets, id: \.self) { seconds in
+                    Text(ServiceController.paragraphPauseLabel(seconds)).tag(seconds)
+                }
+            }
+
             Picker(
                 "Playback Speed",
                 selection: Binding(
@@ -74,6 +113,13 @@ final class ServiceController: ObservableObject {
     @Published private(set) var shortcutStatus: String?
     @Published private(set) var clipboardPlaybackState: ClipboardPlaybackState = .idle
     @Published private(set) var playbackRate = PlaybackRate.default
+    @Published private(set) var paragraphPause = ParagraphPause.default
+    @Published private(set) var selectedVoiceID = "af_heart"
+    @Published private(set) var voiceGroups: [KokoroVoiceGroup] = []
+
+    var selectedVoiceName: String {
+        KokoroVoiceCatalog.voice(id: selectedVoiceID)?.name ?? selectedVoiceID
+    }
 
     var clipboardActionLabel: String {
         switch clipboardPlaybackState {
@@ -96,6 +142,7 @@ final class ServiceController: ObservableObject {
     private let player: AVFoundationAudioPlayer
     private let clipboardSpeaker: VoicePipeTextSpeaker
     private let clipboardAction: ClipboardReadBackAction
+    private let speechSettings: SpeechSettingsStore
     private var serviceTask: Task<Void, Never>?
     private var clipboardTask: Task<Void, Never>?
     private var clipboardRequestID: UUID?
@@ -114,6 +161,13 @@ final class ServiceController: ObservableObject {
             configuration = .default(modelDirectory: paths.modelsDirectory)
         }
         playbackRate = configuration.playbackRate
+        paragraphPause = configuration.paragraphPause
+        selectedVoiceID = configuration.defaultVoice
+        let modelPath = configuration.modelDirectory.appendingPathComponent(
+            configuration.model.directoryName,
+            isDirectory: true
+        )
+        voiceGroups = KokoroVoiceCatalog.availableGroups(in: modelPath)
 
         store = ModelStore(
             rootURL: configuration.modelDirectory,
@@ -134,17 +188,17 @@ final class ServiceController: ObservableObject {
         let coordinator = SpeechCoordinator(
             synthesizer: backend,
             player: audioPlayer,
-            modelPath: configuration.modelDirectory.appendingPathComponent(
-                configuration.model.directoryName,
-                isDirectory: true
-            )
+            modelPath: modelPath
         )
+        let settings = SpeechSettingsStore(configuration: configuration)
+        speechSettings = settings
         api = ReadBackAPI(
             configuration: configuration,
             modelStore: store,
             backend: backend,
             coordinator: coordinator,
-            downloader: downloader
+            downloader: downloader,
+            speechSettings: settings
         )
         let clipboardEndpoint = URL(
             string: "ws://\(configuration.publicHost):\(configuration.publicPort)/v1/readback/stream"
@@ -277,8 +331,41 @@ final class ServiceController: ObservableObject {
         }
     }
 
+    func setVoice(_ voice: KokoroVoice) {
+        guard voice.id != selectedVoiceID,
+              voiceGroups.contains(where: { $0.voices.contains(voice) })
+        else { return }
+
+        configuration.setDefaultVoice(voice.id)
+        selectedVoiceID = voice.id
+        saveSpeechConfiguration(status: "Voice: \(voice.name)")
+        refreshSpeechSettingsAndRestartIfNeeded()
+    }
+
+    func previewVoice() {
+        startClipboardSpeech("test, hello world", completionStatus: "Voice preview finished")
+    }
+
+    func setParagraphPause(_ seconds: Double) {
+        let normalized = ParagraphPause.clamped(seconds)
+        guard normalized != paragraphPause else { return }
+
+        configuration.setParagraphPause(normalized)
+        paragraphPause = normalized
+        saveSpeechConfiguration(
+            status: "Paragraph pause: \(Self.paragraphPauseLabel(normalized))"
+        )
+        refreshSpeechSettingsAndRestartIfNeeded()
+    }
+
     static func playbackRateLabel(_ rate: Double) -> String {
         rate.formatted(.number.precision(.fractionLength(0...2))) + "×"
+    }
+
+    static func paragraphPauseLabel(_ seconds: Double) -> String {
+        if seconds == 0 { return "None" }
+        if seconds < 1 { return "\(Int((seconds * 1_000).rounded())) ms" }
+        return seconds.formatted(.number.precision(.fractionLength(0...1))) + " seconds"
     }
 
     func readClipboard() {
@@ -313,7 +400,10 @@ final class ServiceController: ObservableObject {
         }
     }
 
-    private func startClipboardSpeech(_ text: String) {
+    private func startClipboardSpeech(
+        _ text: String,
+        completionStatus: String? = nil
+    ) {
         let previousRequestID = clipboardRequestID
         let requestID = UUID()
         clipboardTask?.cancel()
@@ -335,6 +425,7 @@ final class ServiceController: ObservableObject {
                 guard modelInstalled else {
                     throw ServiceControllerError.modelNotInstalled
                 }
+                await speechSettings.update(SpeechSettings(configuration: configuration))
                 if serviceTask == nil {
                     start()
                 }
@@ -349,7 +440,7 @@ final class ServiceController: ObservableObject {
                 }
                 finishClipboardRequest(
                     requestID: requestID,
-                    status: "Ready — read \(text.count) characters"
+                    status: completionStatus ?? "Ready — read \(text.count) characters"
                 )
             } catch is CancellationError {
             } catch ServiceControllerError.modelNotInstalled {
@@ -445,6 +536,31 @@ final class ServiceController: ObservableObject {
         modelInstalled = (try? await store.installedModels().contains {
             $0.descriptor.id == configuration.model.id
         }) ?? false
+        let modelPath = configuration.modelDirectory.appendingPathComponent(
+            configuration.model.directoryName,
+            isDirectory: true
+        )
+        voiceGroups = KokoroVoiceCatalog.availableGroups(in: modelPath)
+    }
+
+    private func saveSpeechConfiguration(status successStatus: String) {
+        do {
+            try AppConfigurationStore().save(configuration, at: paths.configurationFile)
+            status = successStatus
+        } catch {
+            status = "Setting changed but could not be saved: \(error.localizedDescription)"
+        }
+    }
+
+    private func refreshSpeechSettingsAndRestartIfNeeded() {
+        let activeText = currentClipboardText
+        Task { [weak self, speechSettings] in
+            guard let self else { return }
+            await speechSettings.update(SpeechSettings(configuration: configuration))
+            if let activeText, currentClipboardText == activeText {
+                startClipboardSpeech(activeText)
+            }
+        }
     }
 
     private func waitForBackend() async throws {
@@ -483,6 +599,7 @@ final class ServiceController: ObservableObject {
                 SpeechRequest(
                     input: "Ready.",
                     voice: configuration.defaultVoice,
+                    languageCode: SpeechSettings(configuration: configuration).languageCode,
                     speed: configuration.defaultSpeed,
                     format: .wav
                 ),

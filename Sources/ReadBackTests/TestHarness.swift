@@ -30,6 +30,7 @@ func expectEqual<Value: Equatable>(
 enum ReadBackTestRunner {
     static func main() async {
         let tests = configurationTests()
+            + voiceCatalogTests()
             + audioPlayerTests()
             + modelStoreTests()
             + streamChunkerTests()

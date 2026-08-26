@@ -58,7 +58,18 @@ public struct AppConfigurationStore: Sendable {
 
     public func loadOrCreate(at url: URL, modelsDirectory: URL) throws -> AppConfiguration {
         if FileManager.default.fileExists(atPath: url.path) {
-            return try JSONDecoder().decode(AppConfiguration.self, from: Data(contentsOf: url))
+            var configuration = try JSONDecoder().decode(
+                AppConfiguration.self,
+                from: Data(contentsOf: url)
+            )
+            let currentDefault = modelsDirectory.standardizedFileURL
+            if configuration.modelDirectory.standardizedFileURL != currentDefault,
+               !FileManager.default.fileExists(atPath: configuration.modelDirectory.path)
+            {
+                configuration.modelDirectory = currentDefault
+                try save(configuration, at: url)
+            }
+            return configuration
         }
         let configuration = AppConfiguration.default(modelDirectory: modelsDirectory)
         try FileManager.default.createDirectory(

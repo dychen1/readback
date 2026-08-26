@@ -31,6 +31,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     public var defaultVoice: String
     public var defaultSpeed: Double
     public private(set) var playbackRate: Double
+    public private(set) var paragraphPause: Double
 
     public init(
         publicHost: String,
@@ -41,7 +42,8 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         modelDirectory: URL,
         defaultVoice: String,
         defaultSpeed: Double,
-        playbackRate: Double = PlaybackRate.default
+        playbackRate: Double = PlaybackRate.default,
+        paragraphPause: Double = ParagraphPause.default
     ) {
         self.publicHost = publicHost
         self.publicPort = publicPort
@@ -52,6 +54,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         self.defaultVoice = defaultVoice
         self.defaultSpeed = defaultSpeed
         self.playbackRate = PlaybackRate.clamped(playbackRate)
+        self.paragraphPause = ParagraphPause.clamped(paragraphPause)
     }
 
     public static func `default`(modelDirectory: URL) -> AppConfiguration {
@@ -64,7 +67,8 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
             modelDirectory: modelDirectory.standardizedFileURL,
             defaultVoice: "af_heart",
             defaultSpeed: 1.0,
-            playbackRate: PlaybackRate.default
+            playbackRate: PlaybackRate.default,
+            paragraphPause: ParagraphPause.default
         )
     }
 
@@ -78,6 +82,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         case defaultVoice
         case defaultSpeed
         case playbackRate
+        case paragraphPause
     }
 
     public init(from decoder: any Decoder) throws {
@@ -94,6 +99,10 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
             try container.decodeIfPresent(Double.self, forKey: .playbackRate)
                 ?? PlaybackRate.default
         )
+        paragraphPause = ParagraphPause.clamped(
+            try container.decodeIfPresent(Double.self, forKey: .paragraphPause)
+                ?? ParagraphPause.default
+        )
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -107,9 +116,19 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         try container.encode(defaultVoice, forKey: .defaultVoice)
         try container.encode(defaultSpeed, forKey: .defaultSpeed)
         try container.encode(playbackRate, forKey: .playbackRate)
+        try container.encode(paragraphPause, forKey: .paragraphPause)
     }
 
     public mutating func setPlaybackRate(_ rate: Double) {
         playbackRate = PlaybackRate.clamped(rate)
+    }
+
+    public mutating func setDefaultVoice(_ voice: String) {
+        guard !voice.isEmpty else { return }
+        defaultVoice = voice
+    }
+
+    public mutating func setParagraphPause(_ seconds: Double) {
+        paragraphPause = ParagraphPause.clamped(seconds)
     }
 }

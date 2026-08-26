@@ -63,6 +63,16 @@ read-back from `0.5×` through `2×`. Changes take effect at the current
 audio position without generating the speech again, including while paused.
 The app saves the selected rate for later launches.
 
+Choose **Voice** to select a short curated list for each supported language.
+The menu puts the four highest-rated English voices first, followed by the
+male English voices Fenrir and Michael. **Preview Voice** says “test, hello
+world” with the selected voice. Changing the voice during a read-back restarts
+that text with the new voice.
+
+Choose **Paragraph Pause** to add a saved gap of `250 ms` through `2 seconds`
+between paragraphs, or disable the gap. The default is `500 ms`. Pause and
+resume preserve the unused part of a paragraph gap.
+
 | Current state | Clipboard | `⌥⌘R` action |
 | --- | --- | --- |
 | Idle | Valid text | Start from the beginning |
@@ -136,6 +146,8 @@ The menu-bar app provides:
 - Current service status and public API address
 - Start and stop controls
 - Read Clipboard with the global `⌥⌘R` shortcut
+- Curated voice choices grouped by language, plus voice preview
+- Paragraph-pause presets from none through 2 seconds
 - Live playback-speed presets from `0.5×` through `2×`
 - Kokoro download and reload
 - Launch at login when running from the app bundle
@@ -212,6 +224,7 @@ curl \
     "model": "kokoro",
     "input": "Save this speech to a WAV file.",
     "voice": "af_heart",
+    "lang_code": "a",
     "speed": 1.0,
     "response_format": "wav"
   }' \
@@ -313,7 +326,7 @@ Other local files live under `~/Library/Application Support/ReadBackVoice/`:
 
 | File | Purpose |
 | --- | --- |
-| `config.json` | Hosts, ports, model path, default voice, synthesis speed, and playback rate |
+| `config.json` | Hosts, ports, model path, voice, synthesis speed, paragraph pause, and playback rate |
 | `backend.log` | MLX-Audio standard output and errors |
 
 ReadBack Voice stores configuration in JSON. It does not use SQLAlchemy or any other database.

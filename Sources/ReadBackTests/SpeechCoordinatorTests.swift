@@ -164,6 +164,79 @@ func speechCoordinatorTests() -> [TestCase] {
             let maximumConcurrentCalls = await synthesizer.maximumConcurrentCalls()
             try expectEqual(maximumConcurrentCalls, 1, "synthesis concurrency")
         },
+        TestCase(name: "speech coordinator waits between paragraph segments") {
+            let player = TimestampAudioPlayer()
+            let coordinator = SpeechCoordinator(
+                synthesizer: RecordingSynthesizer(),
+                player: player,
+                modelPath: URL(fileURLWithPath: "/tmp/model")
+            )
+            try await coordinator.startSession(id: "paragraph-gap") { _ in }
+            _ = try await coordinator.enqueue(
+                text: "First paragraph",
+                voice: "af_heart",
+                languageCode: "a",
+                speed: 1
+            )
+            _ = try await coordinator.enqueue(
+                text: "Second paragraph",
+                voice: "af_heart",
+                languageCode: "a",
+                speed: 1,
+                pauseBefore: 0.08
+            )
+            await coordinator.finishInput()
+            await coordinator.waitUntilFinished(sessionID: "paragraph-gap")
+
+            let intervals = await player.playIntervals()
+            try expectEqual(intervals.count, 1, "paragraph play interval count")
+            try expect(intervals[0] >= 0.07, "paragraph gap must delay the next clip")
+        },
+        TestCase(name: "speech coordinator pauses and resumes a paragraph gap") {
+            let player = ParagraphGapAudioPlayer()
+            let clock = ContinuousClock()
+            let coordinator = SpeechCoordinator(
+                synthesizer: RecordingSynthesizer(),
+                player: player,
+                modelPath: URL(fileURLWithPath: "/tmp/model")
+            )
+            try await coordinator.startSession(id: "paused-gap") { _ in }
+            _ = try await coordinator.enqueue(
+                text: "First paragraph",
+                voice: "af_heart",
+                languageCode: "a",
+                speed: 1
+            )
+            _ = try await coordinator.enqueue(
+                text: "Second paragraph",
+                voice: "af_heart",
+                languageCode: "a",
+                speed: 1,
+                pauseBefore: 0.08
+            )
+            await coordinator.finishInput()
+            await player.waitForFirstPlay()
+            try await Task.sleep(for: .milliseconds(20))
+
+            await coordinator.pause()
+            try await Task.sleep(for: .milliseconds(120))
+            let pausedPlayCount = await player.playCount()
+            try expectEqual(pausedPlayCount, 1, "paused paragraph gap play count")
+
+            let resumedAt = clock.now
+            await coordinator.resume()
+            await coordinator.waitUntilFinished(sessionID: "paused-gap")
+            let resumedPlayCount = await player.playCount()
+            let secondPlayAt = await player.lastPlayTime()
+            try expectEqual(resumedPlayCount, 2, "resumed paragraph gap play count")
+            let resumedDelay = resumedAt.duration(to: secondPlayAt).components
+            let resumedDelaySeconds = Double(resumedDelay.seconds)
+                + Double(resumedDelay.attoseconds) / 1_000_000_000_000_000_000
+            try expect(
+                resumedDelaySeconds >= 0.04,
+                "resume must preserve the unused paragraph gap"
+            )
+        },
     ]
 }
 
@@ -207,6 +280,55 @@ private actor RecordingSynthesizer: SpeechSynthesizing {
     func maximumConcurrentCalls() -> Int {
         maximumConcurrency
     }
+}
+
+private actor TimestampAudioPlayer: AudioPlaying {
+    private let clock = ContinuousClock()
+    private var playTimes: [ContinuousClock.Instant] = []
+
+    func play(_ clip: AudioClip) async throws {
+        playTimes.append(clock.now)
+    }
+
+    func stop() async {}
+    func pause() async {}
+    func resume() async {}
+
+    func playIntervals() -> [Double] {
+        zip(playTimes, playTimes.dropFirst()).map { start, end in
+            let duration = start.duration(to: end)
+            return Double(duration.components.seconds)
+                + Double(duration.components.attoseconds) / 1_000_000_000_000_000_000
+        }
+    }
+}
+
+private actor ParagraphGapAudioPlayer: AudioPlaying {
+    private var plays = 0
+    private let clock = ContinuousClock()
+    private var playTimes: [ContinuousClock.Instant] = []
+    private var firstPlayWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func play(_ clip: AudioClip) async throws {
+        plays += 1
+        playTimes.append(clock.now)
+        if plays == 1 {
+            firstPlayWaiters.forEach { $0.resume() }
+            firstPlayWaiters.removeAll()
+        }
+    }
+
+    func stop() async {}
+    func pause() async {}
+    func resume() async {}
+
+    func waitForFirstPlay() async {
+        if plays > 0 { return }
+        await withCheckedContinuation { firstPlayWaiters.append($0) }
+    }
+
+    func playCount() -> Int { plays }
+    func lastPlayTime() -> ContinuousClock.Instant { playTimes.last! }
 }
 
 private actor BlockingSynthesizer: SpeechSynthesizing {
