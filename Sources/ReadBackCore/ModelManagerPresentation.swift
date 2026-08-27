@@ -25,6 +25,13 @@ public struct ModelManagerPresentation: Equatable, Sendable {
         activeLanguages.flatMap(\.voices)
     }
 
+    public func activeVoices(for languageCode: String?) -> [ModelVoiceDefinition] {
+        guard let languageCode else { return activeVoices }
+        return activeLanguages
+            .first { $0.code == languageCode }?
+            .voices ?? []
+    }
+
     public var isChangingModel: Bool {
         if case .switching = snapshot.operation { return true }
         return false

@@ -1,12 +1,6 @@
 import AppKit
 import ReadBackCore
 
-struct ModelVoiceGroup: Identifiable {
-    var id: String { name }
-    let name: String
-    let voices: [ModelVoiceDefinition]
-}
-
 @MainActor
 extension ServiceController {
     var modelPresentation: ModelManagerPresentation {
@@ -21,6 +15,9 @@ extension ServiceController {
         modelPresentation.activeModel?.languages ?? []
     }
     var selectedLanguageCode: String? { modelSnapshot.activePreferences?.languageCode }
+    var availableVoices: [ModelVoiceDefinition] {
+        modelPresentation.activeVoices(for: selectedLanguageCode)
+    }
     var selectedLanguageName: String {
         guard let selectedLanguageCode else {
             return activeLanguages.isEmpty ? "Automatic" : "Choose"
@@ -31,7 +28,7 @@ extension ServiceController {
 
     var selectedVoiceName: String {
         guard let selectedVoiceID else { return "Default" }
-        return modelPresentation.activeVoices.first { $0.id == selectedVoiceID }?.displayName
+        return availableVoices.first { $0.id == selectedVoiceID }?.displayName
             ?? selectedVoiceID
     }
 
@@ -64,12 +61,6 @@ extension ServiceController {
                 configuration.setPreferences(preference)
                 selectedVoiceID = preference.voiceID
             }
-            voiceGroups = snapshot.models
-                .first { $0.id == snapshot.activeModelID }?
-                .languages
-                .filter(\.isInstalled)
-                .map { ModelVoiceGroup(name: $0.displayName, voices: $0.voices) }
-                ?? []
             updateStatus(for: snapshot)
         }
     }
@@ -88,10 +79,10 @@ extension ServiceController {
 
     func setVoice(_ voice: ModelVoiceDefinition) {
         guard canChangeVoice, let activeModelID else { return }
-        let languageCode = activeLanguages
-            .first { language in language.voices.contains { $0.id == voice.id } }?
-            .code
         let current = modelSnapshot.activePreferences
+        let languageCode = current?.languageCode.flatMap { currentLanguage in
+            voice.supports(languageCode: currentLanguage) ? currentLanguage : nil
+        } ?? voice.supportedLanguageCodes.first
         let preference = ModelPreference(
             modelID: activeModelID,
             voiceID: voice.id,
@@ -152,6 +143,13 @@ extension ServiceController {
             } catch {
                 status = "Could not install \(model.displayName): \(error.localizedDescription)"
             }
+        }
+    }
+
+    func cancelModelInstallation() {
+        status = "Cancelling download…"
+        Task {
+            await modelManager.cancelInstallation()
         }
     }
 

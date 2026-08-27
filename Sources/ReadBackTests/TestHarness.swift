@@ -45,6 +45,7 @@ enum ReadBackTestRunner {
             + wavEncoderTests()
             + inferenceSmokeTests()
             + mlxSpeechModelSessionTests()
+            + speechRuntimeAdapterTests()
             + voiceCatalogTests()
             + audioPlayerTests()
             + modelStoreTests()

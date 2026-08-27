@@ -169,18 +169,14 @@ struct ReadBackPopover: View {
             .disabled(!controller.canChangeModel)
 
             Menu {
-                ForEach(controller.voiceGroups, id: \.name) { group in
-                    Section(group.name) {
-                        ForEach(group.voices) { voice in
-                            Button {
-                                controller.setVoice(voice)
-                            } label: {
-                                if voice.id == controller.selectedVoiceID {
-                                    Label(voice.displayName, systemImage: "checkmark")
-                                } else {
-                                    Text(voice.displayName)
-                                }
-                            }
+                ForEach(controller.availableVoices) { voice in
+                    Button {
+                        controller.setVoice(voice)
+                    } label: {
+                        if voice.id == controller.selectedVoiceID {
+                            Label(voice.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(voice.displayName)
                         }
                     }
                 }
@@ -197,7 +193,7 @@ struct ReadBackPopover: View {
                 .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
-            .disabled(controller.voiceGroups.isEmpty || !controller.canChangeVoice)
+            .disabled(controller.availableVoices.isEmpty || !controller.canChangeVoice)
 
             Menu {
                 ForEach(controller.activeLanguages) { language in
@@ -326,7 +322,6 @@ final class ServiceController: ObservableObject {
     @Published private(set) var playbackRate = PlaybackRate.default
     @Published private(set) var paragraphPause = ParagraphPause.default
     @Published var selectedVoiceID: String? = "af_heart"
-    @Published var voiceGroups: [ModelVoiceGroup] = []
     @Published var installingLanguageID: String?
     @Published var modelSnapshot = ModelManagerSnapshot(
         models: [],
@@ -405,6 +400,16 @@ final class ServiceController: ObservableObject {
             "Models",
             isDirectory: true
         )
+        let session = MLXSpeechModelSession(
+            languageResourceRoots: [
+                assets.bundledLanguagesURL,
+                assets.installedLanguagesURL,
+                managedModelsURL
+                    .appendingPathComponent(ModelID.kokoro.rawValue, isDirectory: true)
+                    .appendingPathComponent(CuratedModelDefinition.kokoro.revision, isDirectory: true)
+                    .appendingPathComponent("Languages", isDirectory: true),
+            ]
+        )
         let library = ModelLibrary(
             catalog: catalog,
             paths: ModelLibraryPaths(
@@ -417,17 +422,8 @@ final class ServiceController: ObservableObject {
                     "local-model.json"
                 )
             ),
-            bundledModels: [.kokoro: assets.runtimeModelURL]
-        )
-        let session = MLXSpeechModelSession(
-            languageResourceRoots: [
-                assets.bundledLanguagesURL,
-                assets.installedLanguagesURL,
-                managedModelsURL
-                    .appendingPathComponent(ModelID.kokoro.rawValue, isDirectory: true)
-                    .appendingPathComponent(CuratedModelDefinition.kokoro.revision, isDirectory: true)
-                    .appendingPathComponent("Languages", isDirectory: true),
-            ]
+            bundledModels: [.kokoro: assets.runtimeModelURL],
+            validator: session
         )
         let activityGate = ReadBackActivityGate()
         let manager = ModelManager(

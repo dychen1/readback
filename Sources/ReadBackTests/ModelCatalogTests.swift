@@ -68,5 +68,135 @@ func modelCatalogTests() -> [TestCase] {
                 }
             }
         },
+        TestCase(name: "catalog supports one voice across several languages") {
+            let model = CuratedModelDefinition(
+                id: ModelID(rawValue: "shared-voice"),
+                displayName: "Shared Voice",
+                repository: "example/shared-voice",
+                revision: "revision-1",
+                distribution: .downloadable,
+                runtimeKind: .qwen3CustomVoice,
+                downloadSize: 1,
+                requiredAssets: [
+                    ModelAssetDefinition(
+                        relativePath: "config.json",
+                        byteCount: 1,
+                        sha256: String(repeating: "a", count: 64)
+                    )
+                ],
+                languages: [
+                    ModelLanguageDefinition(
+                        code: "en",
+                        displayName: "English",
+                        runtimeValue: "English",
+                        distribution: .includedWithModel,
+                        requiredAssets: []
+                    ),
+                    ModelLanguageDefinition(
+                        code: "fr",
+                        displayName: "French",
+                        runtimeValue: "French",
+                        distribution: .includedWithModel,
+                        requiredAssets: []
+                    ),
+                ],
+                voices: [
+                    ModelVoiceDefinition(
+                        id: "ryan",
+                        displayName: "Ryan",
+                        runtimeValue: "Ryan",
+                        supportedLanguageCodes: ["en", "fr"]
+                    )
+                ],
+                defaultSelection: VoiceSelection(languageCode: "en", voiceID: "ryan"),
+                defaultVoiceByLanguage: ["en": "ryan", "fr": "ryan"],
+                defaultSynthesisSpeed: 1
+            )
+
+            let catalog = try CuratedModelCatalog(models: [model])
+            let saved = try catalog.model(id: model.id)
+
+            try expectEqual(saved.voices[0].supportedLanguageCodes, ["en", "fr"], "languages")
+            try expectEqual(saved.defaultVoiceByLanguage["fr"], "ryan", "French default")
+        },
+        TestCase(name: "catalog rejects a voice that names an unknown language") {
+            let model = CuratedModelDefinition(
+                id: ModelID(rawValue: "bad-voice-language"),
+                displayName: "Bad Voice Language",
+                repository: "example/bad-voice-language",
+                revision: "revision-1",
+                distribution: .downloadable,
+                runtimeKind: .qwen3CustomVoice,
+                downloadSize: 1,
+                requiredAssets: [
+                    ModelAssetDefinition(
+                        relativePath: "config.json",
+                        byteCount: 1,
+                        sha256: String(repeating: "a", count: 64)
+                    )
+                ],
+                languages: [
+                    ModelLanguageDefinition(
+                        code: "en",
+                        displayName: "English",
+                        runtimeValue: "English",
+                        distribution: .includedWithModel,
+                        requiredAssets: []
+                    )
+                ],
+                voices: [
+                    ModelVoiceDefinition(
+                        id: "ryan",
+                        displayName: "Ryan",
+                        runtimeValue: "Ryan",
+                        supportedLanguageCodes: ["de"]
+                    )
+                ],
+                defaultSelection: VoiceSelection(languageCode: "en", voiceID: "ryan"),
+                defaultVoiceByLanguage: ["en": "ryan"],
+                defaultSynthesisSpeed: 1
+            )
+
+            do {
+                _ = try CuratedModelCatalog(models: [model])
+                throw TestFailure(description: "unknown voice language should fail")
+            } catch let error as ModelCatalogError {
+                try expectEqual(
+                    error,
+                    .unknownVoiceLanguage(modelID: model.id, voiceID: "ryan", code: "de"),
+                    "catalog error"
+                )
+            }
+        },
+        TestCase(name: "catalog pins curated Qwen CustomVoice") {
+            let qwen = try CuratedModelCatalog.bundled.model(id: .qwen3CustomVoice06B8Bit)
+
+            try expectEqual(qwen.distribution, .downloadable, "distribution")
+            try expectEqual(qwen.runtimeKind, .qwen3CustomVoice, "runtime kind")
+            try expectEqual(
+                qwen.repository,
+                "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit",
+                "repository"
+            )
+            try expectEqual(
+                qwen.revision,
+                "4addb03177a4f581502fc279585b190f47728e3f",
+                "revision"
+            )
+            try expectEqual(qwen.downloadSize, 1_649_421_615, "download size")
+            try expectEqual(qwen.requiredAssets.count, 12, "asset count")
+            try expectEqual(qwen.languages.map(\.code), ["en", "fr"], "languages")
+            try expectEqual(
+                qwen.voices.map(\.displayName),
+                ["Ryan", "Aiden", "Serena", "Vivian"],
+                "voices"
+            )
+            try expectEqual(
+                qwen.defaultSelection,
+                VoiceSelection(languageCode: "en", voiceID: "ryan"),
+                "model default"
+            )
+            try expectEqual(qwen.defaultVoiceByLanguage["fr"], "serena", "French default")
+        },
     ]
 }

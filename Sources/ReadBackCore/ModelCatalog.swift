@@ -10,6 +10,9 @@ public struct ModelID: RawRepresentable, Codable, Hashable, Sendable, CustomStri
     public var description: String { rawValue }
 
     public static let kokoro = ModelID(rawValue: "kokoro")
+    public static let qwen3CustomVoice06B8Bit = ModelID(
+        rawValue: "qwen3-custom-voice-0.6b-8bit"
+    )
     public static let local = ModelID(rawValue: "local")
 }
 
@@ -24,8 +27,43 @@ public enum ModelLanguageDistribution: String, Codable, Equatable, Sendable {
     case downloadable
 }
 
-public enum MLXRuntimeProfile: String, Codable, Equatable, Sendable {
+public enum SpeechRuntimeKind: String, Codable, Equatable, Sendable {
     case kokoro
+    case qwen3CustomVoice
+}
+
+public typealias MLXRuntimeProfile = SpeechRuntimeKind
+
+public struct VoiceSelection: Codable, Equatable, Sendable {
+    public let languageCode: String
+    public let voiceID: String
+
+    public init(languageCode: String, voiceID: String) {
+        self.languageCode = languageCode
+        self.voiceID = voiceID
+    }
+}
+
+public struct ResolvedSpeechRequest: Equatable, Sendable {
+    public let input: String
+    public let selection: VoiceSelection
+    public let voiceRuntimeValue: String
+    public let languageRuntimeValue: String
+    public let format: AudioFormat
+
+    public init(
+        input: String,
+        selection: VoiceSelection,
+        voiceRuntimeValue: String,
+        languageRuntimeValue: String,
+        format: AudioFormat
+    ) {
+        self.input = input
+        self.selection = selection
+        self.voiceRuntimeValue = voiceRuntimeValue
+        self.languageRuntimeValue = languageRuntimeValue
+        self.format = format
+    }
 }
 
 public struct ModelAssetDefinition: Codable, Equatable, Sendable {
@@ -50,12 +88,36 @@ public struct ModelAssetDefinition: Codable, Equatable, Sendable {
 public struct ModelVoiceDefinition: Codable, Equatable, Identifiable, Sendable {
     public let id: String
     public let displayName: String
-    public let languageCode: String
+    public let runtimeValue: String
+    public let supportedLanguageCodes: [String]
 
-    public init(id: String, displayName: String, languageCode: String) {
+    public init(
+        id: String,
+        displayName: String,
+        runtimeValue: String,
+        supportedLanguageCodes: [String]
+    ) {
         self.id = id
         self.displayName = displayName
-        self.languageCode = languageCode
+        self.runtimeValue = runtimeValue
+        self.supportedLanguageCodes = supportedLanguageCodes
+    }
+
+    public init(id: String, displayName: String, languageCode: String) {
+        self.init(
+            id: id,
+            displayName: displayName,
+            runtimeValue: id,
+            supportedLanguageCodes: [languageCode]
+        )
+    }
+
+    public var languageCode: String {
+        supportedLanguageCodes.first ?? ""
+    }
+
+    public func supports(languageCode: String) -> Bool {
+        supportedLanguageCodes.contains(languageCode)
     }
 }
 
@@ -64,9 +126,25 @@ public struct ModelLanguageDefinition: Codable, Equatable, Identifiable, Sendabl
 
     public let code: String
     public let displayName: String
+    public let runtimeValue: String
     public let distribution: ModelLanguageDistribution
     public let requiredAssets: [ModelAssetDefinition]
     public let voices: [ModelVoiceDefinition]
+
+    public init(
+        code: String,
+        displayName: String,
+        runtimeValue: String,
+        distribution: ModelLanguageDistribution,
+        requiredAssets: [ModelAssetDefinition]
+    ) {
+        self.code = code
+        self.displayName = displayName
+        self.runtimeValue = runtimeValue
+        self.distribution = distribution
+        self.requiredAssets = requiredAssets
+        voices = []
+    }
 
     public init(
         code: String,
@@ -77,6 +155,7 @@ public struct ModelLanguageDefinition: Codable, Equatable, Identifiable, Sendabl
     ) {
         self.code = code
         self.displayName = displayName
+        runtimeValue = voices.first?.languageCode ?? code
         self.distribution = distribution
         self.requiredAssets = requiredAssets
         self.voices = voices
@@ -89,13 +168,44 @@ public struct CuratedModelDefinition: Codable, Equatable, Identifiable, Sendable
     public let repository: String
     public let revision: String
     public let distribution: ModelDistribution
-    public let runtimeProfile: MLXRuntimeProfile
+    public let runtimeKind: SpeechRuntimeKind
     public let downloadSize: Int64
     public let requiredAssets: [ModelAssetDefinition]
     public let languages: [ModelLanguageDefinition]
-    public let defaultVoiceID: String?
-    public let defaultLanguageCode: String?
+    public let voices: [ModelVoiceDefinition]
+    public let defaultSelection: VoiceSelection?
+    public let defaultVoiceByLanguage: [String: String]
     public let defaultSynthesisSpeed: Double
+
+    public init(
+        id: ModelID,
+        displayName: String,
+        repository: String,
+        revision: String,
+        distribution: ModelDistribution,
+        runtimeKind: SpeechRuntimeKind,
+        downloadSize: Int64,
+        requiredAssets: [ModelAssetDefinition],
+        languages: [ModelLanguageDefinition],
+        voices: [ModelVoiceDefinition],
+        defaultSelection: VoiceSelection?,
+        defaultVoiceByLanguage: [String: String],
+        defaultSynthesisSpeed: Double
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.repository = repository
+        self.revision = revision
+        self.distribution = distribution
+        self.runtimeKind = runtimeKind
+        self.downloadSize = downloadSize
+        self.requiredAssets = requiredAssets
+        self.languages = languages
+        self.voices = voices
+        self.defaultSelection = defaultSelection
+        self.defaultVoiceByLanguage = defaultVoiceByLanguage
+        self.defaultSynthesisSpeed = defaultSynthesisSpeed
+    }
 
     public init(
         id: ModelID,
@@ -111,19 +221,46 @@ public struct CuratedModelDefinition: Codable, Equatable, Identifiable, Sendable
         defaultLanguageCode: String?,
         defaultSynthesisSpeed: Double
     ) {
-        self.id = id
-        self.displayName = displayName
-        self.repository = repository
-        self.revision = revision
-        self.distribution = distribution
-        self.runtimeProfile = runtimeProfile
-        self.downloadSize = downloadSize
-        self.requiredAssets = requiredAssets
-        self.languages = languages
-        self.defaultVoiceID = defaultVoiceID
-        self.defaultLanguageCode = defaultLanguageCode
-        self.defaultSynthesisSpeed = defaultSynthesisSpeed
+        let normalizedVoices = languages.flatMap { language in
+            language.voices.map { voice in
+                ModelVoiceDefinition(
+                    id: voice.id,
+                    displayName: voice.displayName,
+                    runtimeValue: voice.runtimeValue,
+                    supportedLanguageCodes: [language.code]
+                )
+            }
+        }
+        let defaults = Dictionary(
+            uniqueKeysWithValues: languages.compactMap { language in
+                language.voices.first.map { (language.code, $0.id) }
+            }
+        )
+        let selection: VoiceSelection? = if let defaultLanguageCode, let defaultVoiceID {
+            VoiceSelection(languageCode: defaultLanguageCode, voiceID: defaultVoiceID)
+        } else {
+            nil
+        }
+        self.init(
+            id: id,
+            displayName: displayName,
+            repository: repository,
+            revision: revision,
+            distribution: distribution,
+            runtimeKind: runtimeProfile,
+            downloadSize: downloadSize,
+            requiredAssets: requiredAssets,
+            languages: languages,
+            voices: normalizedVoices,
+            defaultSelection: selection,
+            defaultVoiceByLanguage: defaults,
+            defaultSynthesisSpeed: defaultSynthesisSpeed
+        )
     }
+
+    public var runtimeProfile: MLXRuntimeProfile { runtimeKind }
+    public var defaultVoiceID: String? { defaultSelection?.voiceID }
+    public var defaultLanguageCode: String? { defaultSelection?.languageCode }
 }
 
 public enum ModelCatalogError: Error, Equatable, Sendable {
@@ -134,8 +271,10 @@ public enum ModelCatalogError: Error, Equatable, Sendable {
     case missingRevision(ModelID)
     case duplicateLanguage(modelID: ModelID, code: String)
     case duplicateVoice(modelID: ModelID, voiceID: String)
+    case unknownVoiceLanguage(modelID: ModelID, voiceID: String, code: String)
     case invalidDefaultLanguage(ModelID)
     case invalidDefaultVoice(ModelID)
+    case invalidDefaultVoiceForLanguage(modelID: ModelID, code: String)
     case unsafeAssetPath(modelID: ModelID, path: String)
 }
 
@@ -174,7 +313,7 @@ public struct CuratedModelCatalog: Sendable {
 
     public static let bundled: CuratedModelCatalog = {
         do {
-            return try CuratedModelCatalog(models: [.kokoro])
+            return try CuratedModelCatalog(models: [.kokoro, .qwen3CustomVoice06B8Bit])
         } catch {
             preconditionFailure("Invalid bundled model catalog: \(error)")
         }
@@ -199,10 +338,17 @@ public struct CuratedModelCatalog: Sendable {
             for asset in language.requiredAssets {
                 try validateAsset(asset, modelID: model.id)
             }
-            for voice in language.voices {
-                guard voiceIDs.insert(voice.id).inserted else {
-                    throw ModelCatalogError.duplicateVoice(modelID: model.id, voiceID: voice.id)
-                }
+        }
+        for voice in model.voices {
+            guard voiceIDs.insert(voice.id).inserted else {
+                throw ModelCatalogError.duplicateVoice(modelID: model.id, voiceID: voice.id)
+            }
+            for code in voice.supportedLanguageCodes where !languageCodes.contains(code) {
+                throw ModelCatalogError.unknownVoiceLanguage(
+                    modelID: model.id,
+                    voiceID: voice.id,
+                    code: code
+                )
             }
         }
         if let language = model.defaultLanguageCode, !languageCodes.contains(language) {
@@ -210,6 +356,28 @@ public struct CuratedModelCatalog: Sendable {
         }
         if let voice = model.defaultVoiceID, !voiceIDs.contains(voice) {
             throw ModelCatalogError.invalidDefaultVoice(model.id)
+        }
+        if let selection = model.defaultSelection,
+           !model.voices.contains(where: {
+               $0.id == selection.voiceID && $0.supports(languageCode: selection.languageCode)
+           })
+        {
+            throw ModelCatalogError.invalidDefaultVoiceForLanguage(
+                modelID: model.id,
+                code: selection.languageCode
+            )
+        }
+        for language in model.languages where !model.voices.isEmpty {
+            guard let defaultVoiceID = model.defaultVoiceByLanguage[language.code],
+                  model.voices.contains(where: {
+                      $0.id == defaultVoiceID && $0.supports(languageCode: language.code)
+                  })
+            else {
+                throw ModelCatalogError.invalidDefaultVoiceForLanguage(
+                    modelID: model.id,
+                    code: language.code
+                )
+            }
         }
     }
 
@@ -241,34 +409,131 @@ public struct CuratedModelCatalog: Sendable {
 }
 
 public extension CuratedModelDefinition {
-    static let kokoro = CuratedModelDefinition(
-        id: .kokoro,
-        displayName: "Kokoro",
-        repository: "mlx-community/Kokoro-82M-bf16",
-        revision: "a71e4d38b236d968966a2002c4c895dbd12b1c3c",
-        distribution: .bundled,
-        runtimeProfile: .kokoro,
-        downloadSize: 0,
-        requiredAssets: KokoroDownloadAssets.bundledModelAssets,
-        languages: KokoroLanguagePackCatalog.all.map { pack in
+    static let kokoro: CuratedModelDefinition = {
+        let packs = KokoroLanguagePackCatalog.all
+        let languages = packs.map { pack in
             ModelLanguageDefinition(
                 code: pack.id,
                 displayName: pack.name,
+                runtimeValue: pack.voices.first?.languageCode ?? pack.id,
                 distribution: pack.isBundled ? .bundled : .downloadable,
-                requiredAssets: KokoroDownloadAssets.assets(for: pack),
-                voices: pack.voices.map { voice in
-                    ModelVoiceDefinition(
-                        id: voice.id,
-                        displayName: voice.name,
-                        languageCode: voice.languageCode
-                    )
-                }
+                requiredAssets: KokoroDownloadAssets.assets(for: pack)
             )
-        },
-        defaultVoiceID: "af_heart",
-        defaultLanguageCode: "en",
+        }
+        let voices = packs.flatMap { pack in
+            pack.voices.map { voice in
+                ModelVoiceDefinition(
+                    id: voice.id,
+                    displayName: voice.name,
+                    runtimeValue: voice.id,
+                    supportedLanguageCodes: [pack.id]
+                )
+            }
+        }
+        let defaults = Dictionary(
+            uniqueKeysWithValues: packs.compactMap { pack in
+                pack.voices.first.map { (pack.id, $0.id) }
+            }
+        )
+        return CuratedModelDefinition(
+            id: .kokoro,
+            displayName: "Kokoro",
+            repository: "mlx-community/Kokoro-82M-bf16",
+            revision: "a71e4d38b236d968966a2002c4c895dbd12b1c3c",
+            distribution: .bundled,
+            runtimeKind: .kokoro,
+            downloadSize: 0,
+            requiredAssets: KokoroDownloadAssets.bundledModelAssets,
+            languages: languages,
+            voices: voices,
+            defaultSelection: VoiceSelection(languageCode: "en", voiceID: "af_heart"),
+            defaultVoiceByLanguage: defaults,
+            defaultSynthesisSpeed: 1
+        )
+    }()
+
+    static let qwen3CustomVoice06B8Bit = CuratedModelDefinition(
+        id: .qwen3CustomVoice06B8Bit,
+        displayName: "Qwen3 CustomVoice 0.6B",
+        repository: "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit",
+        revision: "4addb03177a4f581502fc279585b190f47728e3f",
+        distribution: .downloadable,
+        runtimeKind: .qwen3CustomVoice,
+        downloadSize: Qwen3CustomVoiceDownloadAssets.totalSize,
+        requiredAssets: Qwen3CustomVoiceDownloadAssets.all,
+        languages: [
+            ModelLanguageDefinition(
+                code: "en",
+                displayName: "English",
+                runtimeValue: "English",
+                distribution: .includedWithModel,
+                requiredAssets: []
+            ),
+            ModelLanguageDefinition(
+                code: "fr",
+                displayName: "French",
+                runtimeValue: "French",
+                distribution: .includedWithModel,
+                requiredAssets: []
+            ),
+        ],
+        voices: [
+            ModelVoiceDefinition(
+                id: "ryan",
+                displayName: "Ryan",
+                runtimeValue: "Ryan",
+                supportedLanguageCodes: ["en", "fr"]
+            ),
+            ModelVoiceDefinition(
+                id: "aiden",
+                displayName: "Aiden",
+                runtimeValue: "Aiden",
+                supportedLanguageCodes: ["en", "fr"]
+            ),
+            ModelVoiceDefinition(
+                id: "serena",
+                displayName: "Serena",
+                runtimeValue: "Serena",
+                supportedLanguageCodes: ["en", "fr"]
+            ),
+            ModelVoiceDefinition(
+                id: "vivian",
+                displayName: "Vivian",
+                runtimeValue: "Vivian",
+                supportedLanguageCodes: ["en", "fr"]
+            ),
+        ],
+        defaultSelection: VoiceSelection(languageCode: "en", voiceID: "ryan"),
+        defaultVoiceByLanguage: ["en": "ryan", "fr": "serena"],
         defaultSynthesisSpeed: 1
     )
+}
+
+private enum Qwen3CustomVoiceDownloadAssets {
+    static let all: [ModelAssetDefinition] = [
+        asset("config.json", 6_058, "2eea3665564268139c3beb8d497fd3c2e4524e9eed5452836cdf1de96ed3cdbd"),
+        asset("generation_config.json", 245, "f1b90b4513f3b34c62851049e2492d7b4c5940daf1276f89c82b8ef04127f3aa"),
+        asset("merges.txt", 1_671_839, "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3"),
+        asset("model.safetensors", 962_589_155, "a11e2dff4a8f82b20c0e2f9e124b33c7a8f4a6ffcbb9607685cddd6c7e819e6a"),
+        asset("model.safetensors.index.json", 74_276, "c2371ff6a5a50255d1e11dcb709da5aa039b223fc5e26170b368933aca1073bd"),
+        asset("preprocessor_config.json", 127, "efdde1022ea9d76928bf7a9cd53139138f5ba2e466e837f08f6105ab1af1c119"),
+        asset("speech_tokenizer/config.json", 2_336, "ee65bb901c876664ab8707c487157aa1a6ee57c65969b28fb5ec9dc211e68167"),
+        asset("speech_tokenizer/configuration.json", 76, "6bc26d64eb5024b4d1dab5a52371958b429256d6c9d59787f1f5294a54e0cebd"),
+        asset("speech_tokenizer/model.safetensors", 682_293_092, "836b7b357f5ea43e889936a3709af68dfe3751881acefe4ecf0dbd30ba571258"),
+        asset("speech_tokenizer/preprocessor_config.json", 234, "fcb3805e597e786d4067706e602f6688524640f8d3396790e2e09b5942fcbdfb"),
+        asset("tokenizer_config.json", 7_344, "dc3c31c3bdaedd5016382bb3cbe07323026775ad51f5a4fb564505992ae4a670"),
+        asset("vocab.json", 2_776_833, "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"),
+    ]
+
+    static let totalSize = all.reduce(Int64(0)) { $0 + $1.byteCount }
+
+    private static func asset(
+        _ path: String,
+        _ size: Int64,
+        _ sha256: String
+    ) -> ModelAssetDefinition {
+        ModelAssetDefinition(relativePath: path, byteCount: size, sha256: sha256)
+    }
 }
 
 private enum KokoroDownloadAssets {

@@ -15,16 +15,17 @@ private actor FixtureMLXGenerator: MLXSpeechGenerating {
         self.releaseHandler = releaseHandler
     }
 
+    func setSynthesisSpeed(_ speed: Double) async {
+        lastSpeed = speed
+    }
+
     func generateSamples(
         text: String,
         voice: String?,
-        language: String?,
-        speed: Double,
-        profile: MLXRuntimeProfile
+        language: String?
     ) async -> AsyncThrowingStream<[Float], Error> {
         lastVoice = voice
         lastLanguage = language
-        lastSpeed = speed
         let samples = self.samples
         return AsyncThrowingStream { continuation in
             continuation.yield(samples)
@@ -79,6 +80,10 @@ func mlxSpeechModelSessionTests() -> [TestCase] {
             let second = root.appendingPathComponent("second", isDirectory: true)
             try FileManager.default.createDirectory(at: first, withIntermediateDirectories: true)
             try FileManager.default.createDirectory(at: second, withIntermediateDirectories: true)
+            try Data(#"{"model_type":"kokoro"}"#.utf8)
+                .write(to: first.appendingPathComponent("config.json"))
+            try Data(#"{"model_type":"kokoro"}"#.utf8)
+                .write(to: second.appendingPathComponent("config.json"))
 
             try await session.load(from: first, profile: .kokoro)
             await session.unload()
@@ -94,6 +99,8 @@ func mlxSpeechModelSessionTests() -> [TestCase] {
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
             defer { try? FileManager.default.removeItem(at: directory) }
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try Data(#"{"model_type":"kokoro"}"#.utf8)
+                .write(to: directory.appendingPathComponent("config.json"))
             try await session.load(from: directory, profile: .kokoro)
 
             _ = try await session.synthesize(
@@ -111,7 +118,7 @@ func mlxSpeechModelSessionTests() -> [TestCase] {
             let recorded = await generator.recordedRequest()
             try expectEqual(recorded.0, "bf_emma", "voice")
             try expectEqual(recorded.1, "en-gb", "language")
-            try expectEqual(recorded.2, 1.25, "speed")
+            try expectEqual(recorded.2, 1, "speed")
         },
         TestCase(name: "MLX session rejects empty generated audio") {
             let loader = FixtureMLXLoader(samples: [])
@@ -120,6 +127,8 @@ func mlxSpeechModelSessionTests() -> [TestCase] {
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
             defer { try? FileManager.default.removeItem(at: directory) }
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try Data(#"{"model_type":"kokoro"}"#.utf8)
+                .write(to: directory.appendingPathComponent("config.json"))
             try await session.load(from: directory, profile: .kokoro)
 
             do {

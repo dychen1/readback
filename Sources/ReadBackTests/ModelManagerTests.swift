@@ -5,9 +5,13 @@ private actor ManagerTestLibrary: ModelLibraryProtocol {
     let locations: [ModelID: ModelLocation]
     let profiles: [ModelID: MLXRuntimeProfile]
 
-    init(locations: [ModelID: ModelLocation]) {
+    init(
+        locations: [ModelID: ModelLocation],
+        profiles: [ModelID: MLXRuntimeProfile]? = nil
+    ) {
         self.locations = locations
-        profiles = Dictionary(uniqueKeysWithValues: locations.keys.map { ($0, .kokoro) })
+        self.profiles = profiles
+            ?? Dictionary(uniqueKeysWithValues: locations.keys.map { ($0, .kokoro) })
     }
 
     func storageState(for id: ModelID) async -> ModelStorageState {
@@ -176,6 +180,20 @@ func modelManagerTests() -> [TestCase] {
                 "warm-up voice"
             )
         },
+        TestCase(name: "model manager gives local Qwen the standard curated controls") {
+            let fixture = try ModelManagerFixture(localRuntime: .qwen3CustomVoice)
+            defer { fixture.remove() }
+
+            await fixture.manager.warmConfiguredModel()
+
+            let snapshot = await fixture.manager.snapshot()
+            let request = await fixture.session.lastRequest()
+            let local = snapshot.models.first { $0.id == .local }
+            try expectEqual(snapshot.activeModelID, .local, "active local model")
+            try expectEqual(request?.voice, "Ryan", "local Qwen voice")
+            try expectEqual(request?.languageCode, "English", "local Qwen language")
+            try expectEqual(local?.languages.map(\.code), ["en", "fr"], "local languages")
+        },
     ]
 }
 
@@ -186,14 +204,17 @@ private final class ModelManagerFixture {
 
     init(
         failingDirectoryNames: Set<String> = [],
-        savedVoiceID: String? = nil
+        savedVoiceID: String? = nil,
+        localRuntime: MLXRuntimeProfile? = nil
     ) throws {
         rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let kokoroURL = rootURL.appendingPathComponent("Kokoro", isDirectory: true)
         let fixtureURL = rootURL.appendingPathComponent("Fixture", isDirectory: true)
+        let localURL = rootURL.appendingPathComponent("Local", isDirectory: true)
         try FileManager.default.createDirectory(at: kokoroURL, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: fixtureURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: localURL, withIntermediateDirectories: true)
         let fixtureModel = CuratedModelDefinition(
             id: .fixture,
             displayName: "Fixture",
@@ -209,16 +230,26 @@ private final class ModelManagerFixture {
             defaultSynthesisSpeed: 1
         )
         let catalog = try CuratedModelCatalog(models: [.kokoro, fixtureModel])
-        let library = ManagerTestLibrary(
-            locations: [
+        var locations: [ModelID: ModelLocation] = [
                 .kokoro: .bundled(kokoroURL),
                 .fixture: .managed(fixtureURL),
-            ]
-        )
+        ]
+        var profiles: [ModelID: MLXRuntimeProfile] = [
+            .kokoro: .kokoro,
+            .fixture: .kokoro,
+        ]
+        if let localRuntime {
+            locations[.local] = .local(localURL)
+            profiles[.local] = localRuntime
+        }
+        let library = ManagerTestLibrary(locations: locations, profiles: profiles)
         let modelSession = ManagerTestSession(failingDirectoryNames: failingDirectoryNames)
         session = modelSession
         let configurationURL = rootURL.appendingPathComponent("config.json")
         var configuration = AppConfiguration.default(modelDirectory: rootURL)
+        if localRuntime != nil {
+            configuration.activeModelID = .local
+        }
         if let savedVoiceID {
             configuration.setPreferences(
                 ModelPreference(

@@ -86,6 +86,12 @@ struct ModelManagerView: View {
             if model.id == controller.activeModelID {
                 Text("Active")
                     .foregroundStyle(.secondary)
+            } else if case .downloading(let progress) = model.storageState {
+                ProgressView(value: progress)
+                    .frame(width: 90)
+                Button("Cancel") {
+                    controller.cancelModelInstallation()
+                }
             } else if model.canActivate {
                 Button("Use") { controller.activateModel(model.id) }
                     .disabled(!controller.canChangeModel)
@@ -113,6 +119,9 @@ struct ModelManagerView: View {
     }
 
     private func detailLabel(_ model: ModelSnapshot) -> String {
+        if case .downloading(let progress) = model.storageState {
+            return "Downloading \(Int((progress * 100).rounded()))%"
+        }
         var parts = [originLabel(model.origin)]
         if let downloadSize = model.downloadSize, downloadSize > 0 {
             parts.append(ByteCountFormatter.string(fromByteCount: downloadSize, countStyle: .file))

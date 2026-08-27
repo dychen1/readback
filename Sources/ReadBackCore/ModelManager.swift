@@ -126,12 +126,17 @@ public protocol ModelManaging: SpeechSynthesizing, Sendable {
     func snapshot() async -> ModelManagerSnapshot
     func updates() async -> AsyncStream<ModelManagerSnapshot>
     func install(_ id: ModelID) async throws
+    func cancelInstallation() async
     func installLanguage(_ code: String, for id: ModelID) async throws
     func registerLocalModel(at directory: URL) async throws -> ModelID
     func remove(_ id: ModelID) async throws
     func activate(_ id: ModelID) async throws
     func updatePreferences(_ preferences: ModelPreference) async throws
     func warmConfiguredModel() async
+}
+
+public extension ModelManaging {
+    func cancelInstallation() async {}
 }
 
 public actor ModelManager: ModelManaging {
@@ -207,7 +212,7 @@ public actor ModelManager: ModelManaging {
         }
         inFlightGenerations += 1
         defer { inFlightGenerations -= 1 }
-        let resolved = try resolvedRequest(request, for: modelID)
+        let resolved = try await resolvedRequest(request, for: modelID)
         return try await session.synthesize(resolved)
     }
 
@@ -216,7 +221,9 @@ public actor ModelManager: ModelManaging {
         operation = .installingModel(id)
         await publish()
         do {
-            try await library.install(id)
+            try await library.install(id) { [weak self] _ in
+                await self?.publish()
+            }
             operation = .idle
             await publish()
         } catch {
@@ -224,6 +231,10 @@ public actor ModelManager: ModelManaging {
             await publish()
             throw error
         }
+    }
+
+    public func cancelInstallation() async {
+        await library.cancelInstallation()
     }
 
     public func installLanguage(_ code: String, for id: ModelID) async throws {
@@ -322,7 +333,7 @@ public actor ModelManager: ModelManaging {
     }
 
     public func updatePreferences(_ preferences: ModelPreference) async throws {
-        try validate(preferences)
+        try await validate(preferences)
         configuration.setPreferences(preferences)
         try persistConfiguration()
         await publish()
@@ -352,40 +363,64 @@ public actor ModelManager: ModelManaging {
         let location = try await library.location(for: id)
         let profile = try await library.runtimeProfile(for: id)
         let preferences = await normalizedPreferences(for: id)
+        let definition = await controlDefinition(for: id)
         try await session.load(from: location.directoryURL, profile: profile)
         let warmRequest = SpeechRequest(
             input: "test, hello world",
-            voice: preferences.voiceID,
-            languageCode: runtimeLanguage(for: id, voiceID: preferences.voiceID),
+            voice: runtimeVoice(voiceID: preferences.voiceID, definition: definition),
+            languageCode: runtimeLanguage(
+                languageCode: preferences.languageCode,
+                voiceID: preferences.voiceID,
+                definition: definition
+            ),
             speed: preferences.synthesisSpeed,
             format: .wav
         )
         _ = try await session.synthesize(warmRequest)
     }
 
-    private func resolvedRequest(_ request: SpeechRequest, for id: ModelID) throws -> SpeechRequest {
-        let preferences = defaultPreferences(for: id)
+    private func resolvedRequest(
+        _ request: SpeechRequest,
+        for id: ModelID
+    ) async throws -> SpeechRequest {
+        let preferences = await normalizedPreferences(for: id)
+        let definition = await controlDefinition(for: id)
         let voice = request.voice ?? preferences.voiceID
         return SpeechRequest(
             input: request.input,
-            voice: voice,
-            languageCode: request.languageCode ?? runtimeLanguage(for: id, voiceID: voice),
+            voice: runtimeVoice(voiceID: voice, definition: definition),
+            languageCode: request.languageCode ?? runtimeLanguage(
+                languageCode: preferences.languageCode,
+                voiceID: voice,
+                definition: definition
+            ),
             speed: request.speed,
             format: request.format
         )
     }
 
-    private func runtimeLanguage(for id: ModelID, voiceID: String?) -> String? {
-        guard id != .local,
-              let model = try? catalog.model(id: id)
-        else { return nil }
-        if let voiceID {
-            return model.languages.lazy
-                .flatMap(\.voices)
-                .first(where: { $0.id == voiceID })?
-                .languageCode
+    private func runtimeVoice(
+        voiceID: String?,
+        definition: CuratedModelDefinition?
+    ) -> String? {
+        guard let voiceID, let definition else { return voiceID }
+        return definition.voices.first(where: { $0.id == voiceID })?.runtimeValue ?? voiceID
+    }
+
+    private func runtimeLanguage(
+        languageCode: String?,
+        voiceID: String?,
+        definition: CuratedModelDefinition?
+    ) -> String? {
+        guard let definition else { return nil }
+        let voiceLanguage = voiceID.flatMap { selectedVoiceID in
+            definition.voices.first(where: { $0.id == selectedVoiceID })?
+                .supportedLanguageCodes.first
         }
-        return defaultPreferences(for: id).languageCode
+        let selectedLanguageCode = languageCode ?? voiceLanguage
+        return selectedLanguageCode.flatMap { code in
+            definition.languages.first(where: { $0.code == code })?.runtimeValue
+        }
     }
 
     private func defaultPreferences(for id: ModelID) -> ModelPreference {
@@ -394,7 +429,7 @@ public actor ModelManager: ModelManaging {
     }
 
     private func catalogDefaultPreferences(for id: ModelID) -> ModelPreference {
-        guard id != .local, let model = try? catalog.model(id: id) else {
+        guard let model = try? catalog.model(id: id) else {
             return ModelPreference(
                 modelID: id,
                 voiceID: nil,
@@ -411,31 +446,46 @@ public actor ModelManager: ModelManaging {
     }
 
     private func normalizedPreferences(for id: ModelID) async -> ModelPreference {
-        let saved = defaultPreferences(for: id)
-        guard id != .local, let model = try? catalog.model(id: id) else {
-            return saved
+        guard let model = await controlDefinition(for: id) else {
+            return defaultPreferences(for: id)
         }
-        let voiceLanguage = saved.voiceID.flatMap { voiceID in
-            model.languages.first { language in
-                language.voices.contains { $0.id == voiceID }
-            }
+        let fallback = ModelPreference(
+            modelID: id,
+            voiceID: model.defaultVoiceID,
+            languageCode: model.defaultLanguageCode,
+            synthesisSpeed: model.defaultSynthesisSpeed
+        )
+        let saved = configuration.preferences(for: id) ?? fallback
+        let voice = saved.voiceID.flatMap { voiceID in
+            model.voices.first { $0.id == voiceID }
         }
         let language = saved.languageCode.flatMap { code in
             model.languages.first { $0.code == code }
         }
-        let voiceIsValid = saved.voiceID == nil || voiceLanguage != nil
+        let voiceIsValid = saved.voiceID == nil || voice != nil
         let languageIsValid = saved.languageCode == nil || language != nil
-        let requiredLanguage = voiceLanguage ?? language
+        let pairIsValid = switch (voice, language) {
+        case let (.some(voice), .some(language)):
+            voice.supports(languageCode: language.code)
+        default:
+            true
+        }
+        let requiredLanguage = language ?? voice?.supportedLanguageCodes.first.flatMap { code in
+            model.languages.first { $0.code == code }
+        }
         let languageIsInstalled = if let requiredLanguage {
             await library.isLanguageInstalled(requiredLanguage.code, for: id)
         } else {
             true
         }
-        guard voiceIsValid, languageIsValid, languageIsInstalled else {
-            let fallback = catalogDefaultPreferences(for: id)
+        guard voiceIsValid, languageIsValid, pairIsValid, languageIsInstalled else {
             configuration.setPreferences(fallback)
             try? persistConfiguration()
             return fallback
+        }
+        if configuration.preferences(for: id) == nil {
+            configuration.setPreferences(saved)
+            try? persistConfiguration()
         }
         return saved
     }
@@ -445,8 +495,11 @@ public actor ModelManager: ModelManaging {
         configuration.setPreferences(defaultPreferences(for: id))
     }
 
-    private func validate(_ preference: ModelPreference) throws {
-        if preference.modelID == .local {
+    private func validate(_ preference: ModelPreference) async throws {
+        guard let model = await controlDefinition(for: preference.modelID) else {
+            if preference.modelID != .local {
+                throw ModelManagerError.unknownModel(preference.modelID)
+            }
             guard preference.voiceID == nil else {
                 throw ModelManagerError.invalidVoice(preference.voiceID ?? "")
             }
@@ -455,14 +508,8 @@ public actor ModelManager: ModelManaging {
             }
             return
         }
-        let model: CuratedModelDefinition
-        do {
-            model = try catalog.model(id: preference.modelID)
-        } catch {
-            throw ModelManagerError.unknownModel(preference.modelID)
-        }
         if let voice = preference.voiceID,
-           !model.languages.lazy.flatMap(\.voices).contains(where: { $0.id == voice })
+           !model.voices.contains(where: { $0.id == voice })
         {
             throw ModelManagerError.invalidVoice(voice)
         }
@@ -470,6 +517,29 @@ public actor ModelManager: ModelManaging {
            !model.languages.contains(where: { $0.code == language })
         {
             throw ModelManagerError.invalidLanguage(language)
+        }
+        if let voiceID = preference.voiceID,
+           let languageCode = preference.languageCode,
+           !model.voices.contains(where: {
+               $0.id == voiceID && $0.supports(languageCode: languageCode)
+           })
+        {
+            throw ModelManagerError.invalidVoice(voiceID)
+        }
+    }
+
+    private func controlDefinition(for id: ModelID) async -> CuratedModelDefinition? {
+        if id != .local {
+            return try? catalog.model(id: id)
+        }
+        guard let profile = try? await library.runtimeProfile(for: .local) else {
+            return nil
+        }
+        return switch profile {
+        case .qwen3CustomVoice:
+            .qwen3CustomVoice06B8Bit
+        case .kokoro:
+            nil
         }
     }
 
@@ -492,13 +562,20 @@ public actor ModelManager: ModelManaging {
                     ModelLanguageSnapshot(
                         code: language.code,
                         displayName: language.displayName,
-                        voices: language.voices,
+                        voices: model.voices.filter {
+                            $0.supports(languageCode: language.code)
+                        },
                         isInstalled: installed,
                         canInstall: !installed && language.distribution == .downloadable
                     )
                 )
             }
             let installed = Self.isInstalled(storage)
+            let canInstall = if case .notInstalled = storage {
+                model.distribution == .downloadable
+            } else {
+                false
+            }
             models.append(
                 ModelSnapshot(
                     id: model.id,
@@ -509,7 +586,7 @@ public actor ModelManager: ModelManaging {
                         ? model.downloadSize
                         : nil,
                     languages: languages,
-                    canInstall: !installed && model.distribution == .downloadable,
+                    canInstall: canInstall,
                     canRemove: installed
                         && model.distribution == .downloadable
                         && configuration.activeModelID != model.id,
@@ -522,6 +599,23 @@ public actor ModelManager: ModelManaging {
         let localState = await library.storageState(for: .local)
         if localState != .notInstalled {
             let displayName = await library.displayName(for: .local) ?? "Local Model"
+            let definition = await controlDefinition(for: .local)
+            var languages: [ModelLanguageSnapshot] = []
+            if let definition {
+                for language in definition.languages {
+                    languages.append(
+                        ModelLanguageSnapshot(
+                            code: language.code,
+                            displayName: language.displayName,
+                            voices: definition.voices.filter {
+                                $0.supports(languageCode: language.code)
+                            },
+                            isInstalled: true,
+                            canInstall: false
+                        )
+                    )
+                }
+            }
             models.append(
                 ModelSnapshot(
                     id: .local,
@@ -529,7 +623,7 @@ public actor ModelManager: ModelManaging {
                     origin: .local,
                     storageState: localState,
                     downloadSize: nil,
-                    languages: [],
+                    languages: languages,
                     canInstall: false,
                     canRemove: configuration.activeModelID != .local,
                     canActivate: localState == .localAvailable
