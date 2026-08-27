@@ -2,6 +2,18 @@ import ReadBackCore
 
 func modelManagerPresentationTests() -> [TestCase] {
     [
+        TestCase(name: "model settings presentation uses Settings for its entry point") {
+            try expectEqual(
+                ModelManagerPresentation.settingsButtonTitle,
+                "Settings",
+                "settings button title"
+            )
+            try expectEqual(
+                ModelManagerPresentation.settingsWindowTitle,
+                "Settings",
+                "settings window title"
+            )
+        },
         TestCase(name: "model presentation separates installed and available entries") {
             let installed = ModelSnapshot(
                 id: .kokoro,

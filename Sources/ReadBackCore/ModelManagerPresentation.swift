@@ -1,4 +1,7 @@
 public struct ModelManagerPresentation: Equatable, Sendable {
+    public static let settingsButtonTitle = "Settings"
+    public static let settingsWindowTitle = "Settings"
+
     public let snapshot: ModelManagerSnapshot
     public let installed: [ModelSnapshot]
     public let available: [ModelSnapshot]

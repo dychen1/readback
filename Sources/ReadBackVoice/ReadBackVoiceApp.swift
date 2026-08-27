@@ -38,7 +38,7 @@ struct ReadBackApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Window("Models", id: "model-manager") {
+        Window(ModelManagerPresentation.settingsWindowTitle, id: "model-manager") {
             ModelManagerView(controller: controller)
                 .frame(minWidth: 460, minHeight: 360)
         }
@@ -296,7 +296,7 @@ struct ReadBackPopover: View {
                 )
                 .foregroundStyle(controller.modelInstalled ? Color.secondary : Color.orange)
                 Spacer()
-                Button("Models…") {
+                Button(ModelManagerPresentation.settingsButtonTitle) {
                     openWindow(id: "model-manager")
                     NSApplication.shared.activate(ignoringOtherApps: true)
                 }

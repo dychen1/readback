@@ -54,19 +54,19 @@ The popover provides:
 - A paragraph-pause slider from `0 ms` to `250 ms` in `25 ms` steps; the default is `50 ms`
 - A playback-speed slider from `0.5×` to `2×` in `0.25×` steps; the default is `1×`
 - Start, stop, launch-at-login, and clipboard controls
-- A Models window for installs, removal, and local model registration
+- A Settings window for model installs, removal, and local model registration
 
 Playback speed can change during active or paused speech without new synthesis. Before synthesis, ReadBack removes common Markdown markers while it keeps readable text and paragraph breaks.
 
 ## Models and languages
 
-Kokoro is bundled, active by default, and cannot be removed. English and French work without another download. The Models window installs other supported language files from pinned revisions and checks each file's size and SHA-256 hash before it publishes the install.
+Kokoro is bundled, active by default, and cannot be removed. English and French work without another download. The Settings window installs other supported language files from pinned revisions and checks each file's size and SHA-256 hash before it publishes the install.
 
 ReadBack stores settings per model. Switching back to a model restores its last voice and language. It keeps only one model loaded, then clears the old MLX cache during a switch.
 
 ### Add a local model
 
-Choose **Models… → Choose Local MLX Model…** and select a model directory. ReadBack uses the folder in place and never copies or deletes its weights. The current release accepts local Kokoro-compatible MLX folders with `config.json` and SafeTensors weights. It performs a real load and preview before it makes the model active.
+Choose **Settings → Choose Local MLX Model…** and select a model directory. ReadBack uses the folder in place and never copies or deletes its weights. The current release accepts local Kokoro-compatible MLX folders with `config.json` and SafeTensors weights. It performs a real load and preview before it makes the model active.
 
 Registering a new local folder replaces the old registration. You must switch away from the local model first.
 
