@@ -1,0 +1,23 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+script_dir="${0:A:h}"
+project_dir="${script_dir:h}"
+version="$("${script_dir}/version" current)"
+dmg_path="${project_dir}/dist/ReadBack-${version}.dmg"
+output_path="${project_dir}/dist/readback.rb"
+
+if [[ ! -s "${dmg_path}" ]]; then
+    print -u2 "Missing ${dmg_path}; run Scripts/build-dmg first."
+    exit 1
+fi
+
+sha256="$(shasum -a 256 "${dmg_path}" | awk '{print $1}')"
+sed \
+    -e "s/__VERSION__/${version}/g" \
+    -e "s/__SHA256__/${sha256}/g" \
+    "${project_dir}/Casks/readback.rb.in" > "${output_path}"
+
+ruby -c "${output_path}"
+print "Built ${output_path}"

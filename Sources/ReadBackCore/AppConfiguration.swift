@@ -24,8 +24,6 @@ public struct ModelDescriptor: Codable, Equatable, Hashable, Sendable {
 public struct AppConfiguration: Codable, Equatable, Sendable {
     public var publicHost: String
     public var publicPort: Int
-    public var backendHost: String
-    public var backendPort: Int
     public var model: ModelDescriptor
     public var modelDirectory: URL
     public var defaultVoice: String
@@ -36,8 +34,6 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     public init(
         publicHost: String,
         publicPort: Int,
-        backendHost: String,
-        backendPort: Int,
         model: ModelDescriptor,
         modelDirectory: URL,
         defaultVoice: String,
@@ -47,8 +43,6 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     ) {
         self.publicHost = publicHost
         self.publicPort = publicPort
-        self.backendHost = backendHost
-        self.backendPort = backendPort
         self.model = model
         self.modelDirectory = modelDirectory
         self.defaultVoice = defaultVoice
@@ -61,8 +55,6 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         AppConfiguration(
             publicHost: "127.0.0.1",
             publicPort: 51_280,
-            backendHost: "127.0.0.1",
-            backendPort: 51_281,
             model: .kokoro,
             modelDirectory: modelDirectory.standardizedFileURL,
             defaultVoice: "af_heart",
@@ -75,8 +67,6 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case publicHost
         case publicPort
-        case backendHost
-        case backendPort
         case model
         case modelDirectory
         case defaultVoice
@@ -89,8 +79,6 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         publicHost = try container.decode(String.self, forKey: .publicHost)
         publicPort = try container.decode(Int.self, forKey: .publicPort)
-        backendHost = try container.decode(String.self, forKey: .backendHost)
-        backendPort = try container.decode(Int.self, forKey: .backendPort)
         model = try container.decode(ModelDescriptor.self, forKey: .model)
         modelDirectory = try container.decode(URL.self, forKey: .modelDirectory)
         defaultVoice = try container.decode(String.self, forKey: .defaultVoice)
@@ -109,8 +97,6 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(publicHost, forKey: .publicHost)
         try container.encode(publicPort, forKey: .publicPort)
-        try container.encode(backendHost, forKey: .backendHost)
-        try container.encode(backendPort, forKey: .backendPort)
         try container.encode(model, forKey: .model)
         try container.encode(modelDirectory, forKey: .modelDirectory)
         try container.encode(defaultVoice, forKey: .defaultVoice)

@@ -1,19 +1,72 @@
 import AppKit
 import ReadBackCore
+import ReadBackInference
 import ReadBackMac
 import ReadBackService
 import ServiceManagement
 import SwiftUI
 
 @main
+@MainActor
+enum ReadBackLauncher {
+    private static let instanceLock = SingleInstanceLock(
+        lockFileURL: FileManager.default.temporaryDirectory
+            .appendingPathComponent("ai.sanrin.readback.instance.lock")
+    )
+
+    static func main() {
+        guard instanceLock.acquire() else {
+            NSRunningApplication.runningApplications(
+                withBundleIdentifier: "ai.sanrin.readback"
+            ).first?.activate()
+            return
+        }
+
+        ReadBackApp.main()
+    }
+}
+
 struct ReadBackApp: App {
     @StateObject private var controller = ServiceController()
 
     var body: some Scene {
-        MenuBarExtra("ReadBack", systemImage: controller.isRunning ? "waveform.circle.fill" : "waveform.circle") {
+        MenuBarExtra {
             ReadBackPopover(controller: controller)
+        } label: {
+            Image(nsImage: BrandImages.menuBarWaveform)
+                .accessibilityLabel("ReadBack")
         }
         .menuBarExtraStyle(.window)
+    }
+}
+
+@MainActor
+private enum BrandImages {
+    static let colorWaveform = loadPNG(
+        named: "ReadBack",
+        fallbackSystemName: "waveform"
+    )
+
+    static let menuBarWaveform: NSImage = {
+        let image = loadPNG(
+            named: "ReadBackMenuBarTemplate",
+            fallbackSystemName: "waveform"
+        )
+        image.isTemplate = true
+        image.size = NSSize(width: 18, height: 18)
+        return image
+    }()
+
+    private static func loadPNG(named name: String, fallbackSystemName: String) -> NSImage {
+        if let url = Bundle.main.url(forResource: name, withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            return image
+        }
+
+        return NSImage(
+            systemSymbolName: fallbackSystemName,
+            accessibilityDescription: "ReadBack"
+        ) ?? NSImage(size: NSSize(width: 18, height: 18))
     }
 }
 
@@ -23,11 +76,29 @@ private struct ReadBackPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Image(systemName: controller.isRunning ? "waveform.circle.fill" : "waveform.circle")
-                    .font(.title2)
-                    .foregroundStyle(controller.isRunning ? .green : .secondary)
-                VStack(alignment: .leading, spacing: 2) {
+                ZStack(alignment: .bottomTrailing) {
+                    Image(nsImage: BrandImages.colorWaveform)
+                        .resizable()
+                        .interpolation(.high)
+                        .frame(width: 32, height: 32)
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+                    Circle()
+                        .fill(controller.isRunning ? Color.green : Color.secondary)
+                        .frame(width: 8, height: 8)
+                        .overlay {
+                            Circle()
+                                .stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 2)
+                        }
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(controller.isRunning ? "ReadBack running" : "ReadBack stopped")
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("ReadBack")
+                        .font(.headline)
                     Text(controller.status)
+                        .font(.subheadline)
                         .lineLimit(1)
                     Text("127.0.0.1:\(controller.configuration.publicPort)")
                         .font(.caption)
@@ -90,6 +161,38 @@ private struct ReadBackPopover: View {
             .menuStyle(.borderlessButton)
             .disabled(controller.voiceGroups.isEmpty)
 
+            Menu {
+                ForEach(KokoroLanguagePackCatalog.all) { pack in
+                    if controller.isLanguageInstalled(pack) {
+                        Label(pack.name, systemImage: "checkmark")
+                    } else {
+                        Button {
+                            controller.installLanguage(pack)
+                        } label: {
+                            Label(
+                                controller.installingLanguageID == pack.id
+                                    ? "Installing \(pack.name)…"
+                                    : "Install \(pack.name)",
+                                systemImage: "arrow.down.circle"
+                            )
+                        }
+                        .disabled(controller.installingLanguageID != nil)
+                    }
+                }
+            } label: {
+                HStack {
+                    Text("Languages")
+                    Spacer()
+                    Text("\(controller.installedLanguageIDs.count) installed")
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+
             Divider()
 
             VStack(alignment: .leading, spacing: 6) {
@@ -139,13 +242,12 @@ private struct ReadBackPopover: View {
             Divider()
 
             HStack {
-                Button(controller.modelInstalled ? "Reload Kokoro" : "Download Kokoro") {
-                    controller.installOrLoadModel()
-                }
-                .disabled(controller.isBusy)
-
+                Label(
+                    controller.modelInstalled ? "Kokoro ready" : "Kokoro unavailable",
+                    systemImage: controller.modelInstalled ? "checkmark.circle" : "exclamationmark.triangle"
+                )
+                .foregroundStyle(controller.modelInstalled ? Color.secondary : Color.orange)
                 Spacer()
-
                 Button("Quit") {
                     Task { await controller.quit() }
                 }
@@ -175,6 +277,8 @@ final class ServiceController: ObservableObject {
     @Published private(set) var paragraphPause = ParagraphPause.default
     @Published private(set) var selectedVoiceID = "af_heart"
     @Published private(set) var voiceGroups: [KokoroVoiceGroup] = []
+    @Published private(set) var installedLanguageIDs = Set<String>()
+    @Published private(set) var installingLanguageID: String?
 
     var selectedVoiceName: String {
         KokoroVoiceCatalog.voice(id: selectedVoiceID)?.name ?? selectedVoiceID
@@ -193,10 +297,11 @@ final class ServiceController: ObservableObject {
     let canManageLaunchAtLogin: Bool
 
     private let paths: RuntimePaths
+    private let assets: ModelAssetLocations
+    private let workspace: ModelWorkspace
+    private let languagePackStore: LanguagePackStore
     private let store: ModelStore
-    private let backend: MLXBackendClient
-    private let supervisor: BackendSupervisor
-    private let downloader = HuggingFaceModelDownloader()
+    private let runtime: KokoroSpeechSynthesizer
     private let api: ReadBackAPI
     private let player: AVFoundationAudioPlayer
     private let clipboardSpeaker: VoicePipeTextSpeaker
@@ -211,52 +316,83 @@ final class ServiceController: ObservableObject {
 
     init() {
         paths = RuntimePaths.resolve()
+        let developmentModel = paths.modelsDirectory.appendingPathComponent(
+            ModelDescriptor.kokoro.directoryName,
+            isDirectory: true
+        )
+        let resources = Bundle.main.resourceURL ?? paths.supportDirectory
+        let assets = ModelAssetLocations.resolve(
+            bundleResourcesURL: resources,
+            supportDirectory: paths.supportDirectory,
+            developmentModelsURL: FileManager.default.fileExists(atPath: developmentModel.path)
+                ? developmentModel
+                : nil
+        )
+        self.assets = assets
+        let modelWorkspace = ModelWorkspace(
+            bundledModelURL: assets.bundledModelURL,
+            installedLanguagesURL: assets.installedLanguagesURL,
+            runtimeModelURL: assets.runtimeModelURL
+        )
+        workspace = modelWorkspace
+        _ = try? modelWorkspace.prepare()
+        languagePackStore = LanguagePackStore(rootURL: assets.installedLanguagesURL)
         do {
             configuration = try AppConfigurationStore().loadOrCreate(
                 at: paths.configurationFile,
-                modelsDirectory: paths.modelsDirectory
+                modelsDirectory: assets.runtimeModelURL.deletingLastPathComponent()
             )
         } catch {
-            configuration = .default(modelDirectory: paths.modelsDirectory)
+            configuration = .default(
+                modelDirectory: assets.runtimeModelURL.deletingLastPathComponent()
+            )
         }
+        configuration.modelDirectory = assets.runtimeModelURL.deletingLastPathComponent()
+        try? AppConfigurationStore().save(configuration, at: paths.configurationFile)
         playbackRate = configuration.playbackRate
         paragraphPause = configuration.paragraphPause
-        selectedVoiceID = configuration.defaultVoice
+        let configuredVoiceID = configuration.defaultVoice
+        selectedVoiceID = configuredVoiceID
         let modelPath = configuration.modelDirectory.appendingPathComponent(
             configuration.model.directoryName,
             isDirectory: true
         )
-        voiceGroups = KokoroVoiceCatalog.availableGroups(in: modelPath)
+        let groups = KokoroVoiceCatalog.availableGroups(in: modelPath)
+        voiceGroups = groups
+        if !groups.contains(where: { group in
+            group.voices.contains { $0.id == configuredVoiceID }
+        }), let fallback = groups.first?.voices.first {
+            configuration.setDefaultVoice(fallback.id)
+            selectedVoiceID = fallback.id
+            try? AppConfigurationStore().save(configuration, at: paths.configurationFile)
+        }
 
         store = ModelStore(
             rootURL: configuration.modelDirectory,
             supportedModels: [configuration.model]
         )
-        backend = MLXBackendClient(
-            baseURL: URL(
-                string: "http://\(configuration.backendHost):\(configuration.backendPort)"
-            )!
+        let speechRuntime = KokoroSpeechSynthesizer(
+            modelDirectoryURL: modelPath,
+            languageResourceRoots: [
+                assets.bundledLanguagesURL,
+                assets.installedLanguagesURL,
+            ]
         )
-        supervisor = BackendSupervisor(
-            command: .mlxAudio(port: configuration.backendPort),
-            logURL: paths.backendLog
-        )
+        runtime = speechRuntime
         let audioPlayer = AVFoundationAudioPlayer()
         audioPlayer.setPlaybackRate(configuration.playbackRate)
         player = audioPlayer
         let coordinator = SpeechCoordinator(
-            synthesizer: backend,
-            player: audioPlayer,
-            modelPath: modelPath
+            synthesizer: speechRuntime,
+            player: audioPlayer
         )
         let settings = SpeechSettingsStore(configuration: configuration)
         speechSettings = settings
         api = ReadBackAPI(
             configuration: configuration,
             modelStore: store,
-            backend: backend,
+            runtime: speechRuntime,
             coordinator: coordinator,
-            downloader: downloader,
             speechSettings: settings
         )
         let clipboardEndpoint = URL(
@@ -282,6 +418,7 @@ final class ServiceController: ObservableObject {
 
         Task {
             await refreshModelState()
+            await refreshLanguageState()
             start()
         }
     }
@@ -289,11 +426,10 @@ final class ServiceController: ObservableObject {
     func start() {
         guard serviceTask == nil else { return }
         status = "Starting service…"
-        serviceTask = Task { [api, supervisor] in
+        serviceTask = Task { [api] in
             do {
-                try await supervisor.start()
                 isRunning = true
-                status = modelInstalled ? "Ready" : "Service running; model not installed"
+                status = modelInstalled ? "Loading Kokoro…" : "Kokoro unavailable"
                 if modelInstalled {
                     Task { await prepareInstalledModel() }
                 }
@@ -320,7 +456,6 @@ final class ServiceController: ObservableObject {
         }
         serviceTask?.cancel()
         serviceTask = nil
-        Task { await supervisor.stop() }
         isRunning = false
         status = "Stopped"
     }
@@ -338,27 +473,7 @@ final class ServiceController: ObservableObject {
         }
         serviceTask?.cancel()
         serviceTask = nil
-        await supervisor.stop()
         NSApplication.shared.terminate(nil)
-    }
-
-    func installOrLoadModel() {
-        guard !isBusy else { return }
-        isBusy = true
-        status = modelInstalled ? "Loading Kokoro…" : "Downloading Kokoro…"
-        Task {
-            do {
-                let directory = try await store.directoryURL(for: configuration.model.id)
-                if !modelInstalled {
-                    try await downloader.download(configuration.model, to: directory)
-                }
-                await refreshModelState()
-                await prepareInstalledModel()
-            } catch {
-                status = "Model setup failed: \(error)"
-            }
-            isBusy = false
-        }
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {
@@ -399,6 +514,28 @@ final class ServiceController: ObservableObject {
             saveSpeechConfiguration(status: "Voice: \(voice.name)")
         }
         startClipboardSpeech("test, hello world", completionStatus: "Voice preview finished")
+    }
+
+    func isLanguageInstalled(_ pack: KokoroLanguagePack) -> Bool {
+        installedLanguageIDs.contains(pack.id)
+    }
+
+    func installLanguage(_ pack: KokoroLanguagePack) {
+        guard !pack.isBundled, installingLanguageID == nil else { return }
+        installingLanguageID = pack.id
+        status = "Installing \(pack.name)…"
+        Task {
+            do {
+                try await languagePackStore.install(packID: pack.id)
+                try workspace.prepare()
+                await refreshModelState()
+                await refreshLanguageState()
+                status = "\(pack.name) installed"
+            } catch {
+                status = "Could not install \(pack.name): \(error.localizedDescription)"
+            }
+            installingLanguageID = nil
+        }
     }
 
     func setParagraphPause(_ seconds: Double) {
@@ -500,7 +637,7 @@ final class ServiceController: ObservableObject {
                 if clipboardRequestID == requestID {
                     finishClipboardRequest(
                         requestID: requestID,
-                        status: "Download Kokoro before reading the clipboard"
+                        status: "The bundled Kokoro model is unavailable"
                     )
                 }
             } catch {
@@ -596,6 +733,16 @@ final class ServiceController: ObservableObject {
         voiceGroups = KokoroVoiceCatalog.availableGroups(in: modelPath)
     }
 
+    private func refreshLanguageState() async {
+        var installed = Set<String>()
+        for pack in KokoroLanguagePackCatalog.all {
+            if await languagePackStore.isInstalled(pack) {
+                installed.insert(pack.id)
+            }
+        }
+        installedLanguageIDs = installed
+    }
+
     private func saveSpeechConfiguration(status successStatus: String) {
         do {
             try AppConfigurationStore().save(configuration, at: paths.configurationFile)
@@ -616,14 +763,6 @@ final class ServiceController: ObservableObject {
         }
     }
 
-    private func waitForBackend() async throws {
-        for _ in 0..<120 {
-            if await backend.isHealthy() { return }
-            try await Task.sleep(for: .milliseconds(250))
-        }
-        throw ServiceControllerError.backendDidNotStart
-    }
-
     private func waitForPublicService() async throws {
         let healthURL = URL(
             string: "http://\(configuration.publicHost):\(configuration.publicPort)/health"
@@ -637,7 +776,8 @@ final class ServiceController: ObservableObject {
             {
                 return
             }
-            try await Task.sleep(for: .milliseconds(100))
+            let clock = ContinuousClock()
+            try await clock.sleep(until: clock.now.advanced(by: .milliseconds(100)))
         }
         throw ServiceControllerError.publicServiceDidNotStart
     }
@@ -645,18 +785,15 @@ final class ServiceController: ObservableObject {
     private func prepareInstalledModel() async {
         status = "Warming Kokoro…"
         do {
-            let directory = try await store.directoryURL(for: configuration.model.id)
-            try await waitForBackend()
-            try await backend.loadModel(at: directory)
-            _ = try await backend.synthesize(
+            try await runtime.prepare()
+            _ = try await runtime.synthesize(
                 SpeechRequest(
                     input: "Ready.",
                     voice: configuration.defaultVoice,
                     languageCode: SpeechSettings(configuration: configuration).languageCode,
                     speed: configuration.defaultSpeed,
                     format: .wav
-                ),
-                modelPath: directory
+                )
             )
             status = "Ready"
         } catch {
@@ -666,14 +803,11 @@ final class ServiceController: ObservableObject {
 }
 
 enum ServiceControllerError: LocalizedError {
-    case backendDidNotStart
     case modelNotInstalled
     case publicServiceDidNotStart
 
     var errorDescription: String? {
         switch self {
-        case .backendDidNotStart:
-            "The MLX backend did not start."
         case .modelNotInstalled:
             "The Kokoro model is not installed."
         case .publicServiceDidNotStart:

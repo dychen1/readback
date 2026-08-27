@@ -52,25 +52,22 @@ public struct PublicSpeechRequest: Decodable, Sendable {
 public final class ReadBackAPI: @unchecked Sendable {
     public let configuration: AppConfiguration
     private let modelStore: ModelStore
-    private let backend: MLXBackendClient
+    private let runtime: any SpeechModelRuntime
     private let coordinator: SpeechCoordinator
-    private let downloader: HuggingFaceModelDownloader
     private let speechSettings: SpeechSettingsStore
     private let encoder = JSONEncoder()
 
     public init(
         configuration: AppConfiguration,
         modelStore: ModelStore,
-        backend: MLXBackendClient,
+        runtime: any SpeechModelRuntime,
         coordinator: SpeechCoordinator,
-        downloader: HuggingFaceModelDownloader = .init(),
         speechSettings: SpeechSettingsStore? = nil
     ) {
         self.configuration = configuration
         self.modelStore = modelStore
-        self.backend = backend
+        self.runtime = runtime
         self.coordinator = coordinator
-        self.downloader = downloader
         self.speechSettings = speechSettings ?? SpeechSettingsStore(configuration: configuration)
     }
 
@@ -78,7 +75,7 @@ public final class ReadBackAPI: @unchecked Sendable {
         let router = Router(context: BasicWebSocketRequestContext.self)
 
         router.get("/health") { [self] _, _ -> HealthResponse in
-            let backendState = await backend.isHealthy() ? "ready" : "stopped"
+            let backendState = await runtime.isPrepared() ? "ready" : "loading"
             let installed = try await modelStore.installedModels().contains {
                 $0.descriptor.id == configuration.model.id
             }
@@ -89,32 +86,28 @@ public final class ReadBackAPI: @unchecked Sendable {
             let installed = try await modelStore.installedModels().contains {
                 $0.descriptor.id == configuration.model.id
             }
-            let modelPath = try await modelStore.directoryURL(for: configuration.model.id)
-            let loaded = await backend.isModelLoaded(at: modelPath)
+            let loaded = await runtime.isPrepared()
             return ModelListResponse(data: [modelResponse(installed: installed, loaded: loaded)])
         }
 
         router.post("/v1/models/:id/load") { [self] _, context -> ActionResponse in
             let id = context.parameters.get("id") ?? ""
             try requireSupportedModel(id)
-            let path = try await modelStore.directoryURL(for: id)
-            try await backend.loadModel(at: path)
+            try await runtime.prepare()
             return ActionResponse(ok: true)
         }
 
         router.post("/v1/models/:id/download") { [self] _, context -> ActionResponse in
             let id = context.parameters.get("id") ?? ""
             try requireSupportedModel(id)
-            let path = try await modelStore.directoryURL(for: id)
-            try await downloader.download(configuration.model, to: path)
+            try await runtime.prepare()
             return ActionResponse(ok: true)
         }
 
         router.delete("/v1/models/:id") { [self] _, context -> ActionResponse in
             let id = context.parameters.get("id") ?? ""
             try requireSupportedModel(id)
-            try await modelStore.delete(modelID: id)
-            return ActionResponse(ok: true)
+            throw HTTPError(.conflict, message: "The bundled Kokoro model cannot be deleted")
         }
 
         router.post("/v1/audio/speech") { [self] request, context -> Response in
@@ -224,10 +217,9 @@ public final class ReadBackAPI: @unchecked Sendable {
     private func synthesize(_ request: PublicSpeechRequest) async throws -> AudioClip {
         let modelID = request.model ?? configuration.model.id
         try requireSupportedModel(modelID)
-        let modelPath = try await modelStore.directoryURL(for: modelID)
         let defaults = await speechSettings.current()
         let voice = request.voice ?? defaults.voice
-        return try await backend.synthesize(
+        return try await runtime.synthesize(
             SpeechRequest(
                 input: request.input,
                 voice: voice,
@@ -236,8 +228,7 @@ public final class ReadBackAPI: @unchecked Sendable {
                     ?? defaults.languageCode,
                 speed: request.speed ?? defaults.synthesisSpeed,
                 format: request.responseFormat ?? .wav
-            ),
-            modelPath: modelPath
+            )
         )
     }
 
@@ -260,7 +251,8 @@ public final class ReadBackAPI: @unchecked Sendable {
                     nextPause = segment.endsParagraph ? settings.paragraphPause : 0
                     break
                 } catch SpeechCoordinatorError.queueLimitExceeded {
-                    try await Task.sleep(for: .milliseconds(25))
+                    let clock = ContinuousClock()
+                    try await clock.sleep(until: clock.now.advanced(by: .milliseconds(25)))
                 }
             }
         }

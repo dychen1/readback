@@ -29,7 +29,7 @@ func audioPlayerTests() -> [TestCase] {
             let started = clock.now
             let playback = Task { try await player.play(clip) }
 
-            try await Task.sleep(for: .milliseconds(200))
+            try await wait(for: .milliseconds(200))
             await player.setPlaybackRate(2.0)
             try await playback.value
 

@@ -1,0 +1,30 @@
+//
+// This source file is part of the Hummingbird server framework project
+// Copyright (c) the Hummingbird authors
+//
+// See LICENSE.txt for license information
+// SPDX-License-Identifier: Apache-2.0
+//
+
+public import Logging
+public import NIOCore
+
+/// ClientConnection child channel setup protocol
+@_documentation(visibility: internal)
+public protocol ClientConnectionChannel: Sendable {
+    associatedtype Value: Sendable
+    associatedtype Result
+
+    /// Setup child channel
+    /// - Parameters:
+    ///   - channel: Child channel
+    ///   - logger: Logger used during setup
+    /// - Returns: Object to process input/output on child channel
+    func setup(channel: any Channel, logger: Logger) -> EventLoopFuture<Value>
+
+    /// handle messages being passed down the channel pipeline
+    /// - Parameters:
+    ///   - value: Object to process input/output on child channel
+    ///   - logger: Logger to use while processing messages
+    func handle(value: Value, logger: Logger) async throws -> Result
+}

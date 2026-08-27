@@ -9,8 +9,7 @@ func speechCoordinatorTests() -> [TestCase] {
             let events = EventRecorder()
             let coordinator = SpeechCoordinator(
                 synthesizer: synthesizer,
-                player: player,
-                modelPath: URL(fileURLWithPath: "/tmp/model")
+                player: player
             )
 
             try await coordinator.startSession(id: "session-1") { event in
@@ -34,8 +33,7 @@ func speechCoordinatorTests() -> [TestCase] {
         TestCase(name: "speech coordinator allows only one active session") {
             let coordinator = SpeechCoordinator(
                 synthesizer: RecordingSynthesizer(),
-                player: RecordingAudioPlayer(),
-                modelPath: URL(fileURLWithPath: "/tmp/model")
+                player: RecordingAudioPlayer()
             )
             try await coordinator.startSession(id: "first") { _ in }
 
@@ -53,7 +51,6 @@ func speechCoordinatorTests() -> [TestCase] {
             let coordinator = SpeechCoordinator(
                 synthesizer: synthesizer,
                 player: RecordingAudioPlayer(),
-                modelPath: URL(fileURLWithPath: "/tmp/model"),
                 maximumPendingCharacters: 2_000
             )
             try await coordinator.startSession(id: "limited") { event in
@@ -85,8 +82,7 @@ func speechCoordinatorTests() -> [TestCase] {
             let player = RecordingAudioPlayer()
             let coordinator = SpeechCoordinator(
                 synthesizer: BlockingSynthesizer(),
-                player: player,
-                modelPath: URL(fileURLWithPath: "/tmp/model")
+                player: player
             )
             try await coordinator.startSession(id: "cancelled") { _ in }
             _ = try await coordinator.enqueue(text: "Cancel me", voice: "af_heart", speed: 1)
@@ -102,8 +98,7 @@ func speechCoordinatorTests() -> [TestCase] {
             let player = PausableAudioPlayer()
             let coordinator = SpeechCoordinator(
                 synthesizer: RecordingSynthesizer(),
-                player: player,
-                modelPath: URL(fileURLWithPath: "/tmp/model")
+                player: player
             )
             try await coordinator.startSession(id: "pausable") { _ in }
             _ = try await coordinator.enqueue(text: "Pause me", voice: "af_heart", speed: 1)
@@ -128,8 +123,7 @@ func speechCoordinatorTests() -> [TestCase] {
             let events = EventRecorder()
             let coordinator = SpeechCoordinator(
                 synthesizer: RecordingSynthesizer(),
-                player: player,
-                modelPath: URL(fileURLWithPath: "/tmp/model")
+                player: player
             )
             try await coordinator.startSession(id: "old-session") { event in
                 await events.record(event)
@@ -151,8 +145,7 @@ func speechCoordinatorTests() -> [TestCase] {
             let synthesizer = RecordingSynthesizer(delayNanoseconds: 2_000_000)
             let coordinator = SpeechCoordinator(
                 synthesizer: synthesizer,
-                player: RecordingAudioPlayer(),
-                modelPath: URL(fileURLWithPath: "/tmp/model")
+                player: RecordingAudioPlayer()
             )
             try await coordinator.startSession(id: "serial") { _ in }
             for text in ["One", "Two", "Three"] {
@@ -168,8 +161,7 @@ func speechCoordinatorTests() -> [TestCase] {
             let player = TimestampAudioPlayer()
             let coordinator = SpeechCoordinator(
                 synthesizer: RecordingSynthesizer(),
-                player: player,
-                modelPath: URL(fileURLWithPath: "/tmp/model")
+                player: player
             )
             try await coordinator.startSession(id: "paragraph-gap") { _ in }
             _ = try await coordinator.enqueue(
@@ -197,8 +189,7 @@ func speechCoordinatorTests() -> [TestCase] {
             let clock = ContinuousClock()
             let coordinator = SpeechCoordinator(
                 synthesizer: RecordingSynthesizer(),
-                player: player,
-                modelPath: URL(fileURLWithPath: "/tmp/model")
+                player: player
             )
             try await coordinator.startSession(id: "paused-gap") { _ in }
             _ = try await coordinator.enqueue(
@@ -216,10 +207,10 @@ func speechCoordinatorTests() -> [TestCase] {
             )
             await coordinator.finishInput()
             await player.waitForFirstPlay()
-            try await Task.sleep(for: .milliseconds(20))
+            try await wait(for: .milliseconds(20))
 
             await coordinator.pause()
-            try await Task.sleep(for: .milliseconds(120))
+            try await wait(for: .milliseconds(120))
             let pausedPlayCount = await player.playCount()
             try expectEqual(pausedPlayCount, 1, "paused paragraph gap play count")
 
@@ -262,7 +253,7 @@ private actor RecordingSynthesizer: SpeechSynthesizing {
         self.delayNanoseconds = delayNanoseconds
     }
 
-    func synthesize(_ request: SpeechRequest, modelPath: URL) async throws -> AudioClip {
+    func synthesize(_ request: SpeechRequest) async throws -> AudioClip {
         recordedInputs.append(request.input)
         concurrentCalls += 1
         maximumConcurrency = max(maximumConcurrency, concurrentCalls)
@@ -336,7 +327,7 @@ private actor BlockingSynthesizer: SpeechSynthesizing {
     private var releaseContinuation: CheckedContinuation<Void, Never>?
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
 
-    func synthesize(_ request: SpeechRequest, modelPath: URL) async throws -> AudioClip {
+    func synthesize(_ request: SpeechRequest) async throws -> AudioClip {
         started = true
         let waiters = startWaiters
         startWaiters.removeAll()

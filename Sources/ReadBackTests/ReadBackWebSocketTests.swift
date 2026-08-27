@@ -5,8 +5,11 @@ import HummingbirdWSTesting
 import ReadBackCore
 import ReadBackService
 
-private actor ImmediateSynthesizer: SpeechSynthesizing {
-    func synthesize(_ request: SpeechRequest, modelPath: URL) async throws -> AudioClip {
+private actor ImmediateSynthesizer: SpeechModelRuntime {
+    func prepare() async throws {}
+    func isPrepared() async -> Bool { true }
+
+    func synthesize(_ request: SpeechRequest) async throws -> AudioClip {
         AudioClip(data: Data(), format: .wav)
     }
 }
@@ -17,7 +20,7 @@ private actor CancelAwareAudioPlayer: AudioPlaying {
     private var resumes = 0
 
     func play(_ clip: AudioClip) async throws {
-        try await Task.sleep(for: .milliseconds(500))
+        try await wait(for: .milliseconds(500))
     }
 
     func stop() async {
@@ -43,17 +46,16 @@ func readBackWebSocketTests() -> [TestCase] {
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
             defer { try? FileManager.default.removeItem(at: root) }
             let configuration = AppConfiguration.default(modelDirectory: root)
-            let backend = MLXBackendClient(baseURL: URL(string: "http://127.0.0.1:1")!)
+            let runtime = ImmediateSynthesizer()
             let player = CancelAwareAudioPlayer()
             let coordinator = SpeechCoordinator(
-                synthesizer: ImmediateSynthesizer(),
-                player: player,
-                modelPath: root
+                synthesizer: runtime,
+                player: player
             )
             let api = ReadBackAPI(
                 configuration: configuration,
                 modelStore: ModelStore(rootURL: root, supportedModels: [.kokoro]),
-                backend: backend,
+                runtime: runtime,
                 coordinator: coordinator
             )
             let router = api.makeRouter()

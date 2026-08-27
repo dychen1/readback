@@ -1,0 +1,19 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+script_dir="${0:A:h}"
+plist_path="${1:-}"
+
+[[ -n "${plist_path}" && -f "${plist_path}" ]] || {
+    print -u2 "stamp-info-plist: pass an existing plist path"
+    exit 1
+}
+
+version="$("${script_dir}/version" current)"
+build_number="$("${script_dir}/version" build-number)"
+
+/usr/libexec/PlistBuddy \
+    -c "Set :CFBundleShortVersionString ${version}" \
+    -c "Set :CFBundleVersion ${build_number}" \
+    "${plist_path}"
