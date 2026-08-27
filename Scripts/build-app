@@ -60,6 +60,7 @@ cp -f "${project_dir}/App/Info.plist" "${contents_dir}/Info.plist"
     "${project_dir}/Assets/readback-wave-mark-1024.png" \
     "${resources_dir}/ReadBack.icns"
 cp -f "${project_dir}/Assets/readback-wave-mark-monochrome-36.png" "${resources_dir}/ReadBackMenuBarTemplate.png"
+cp -f "${project_dir}/Assets/readback-wave-mark-32.png" "${resources_dir}/ReadBack.png"
 cp -f "${model_source}/config.json" "${model_source}/kokoro-v1_0.safetensors" "${model_target}/"
 for voice in "${bundled_voices[@]}"; do
     cp -f "${model_source}/voices/${voice}.safetensors" "${model_target}/voices/"

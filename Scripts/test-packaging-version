@@ -32,6 +32,11 @@ single_instance="$(/usr/libexec/PlistBuddy -c 'Print :LSMultipleInstancesProhibi
 [[ "${build_number}" == "42" ]] || fail "plist build was ${build_number}"
 [[ "${single_instance}" == "true" ]] || fail "app bundle permits multiple instances"
 
+grep -q \
+    'readback-wave-mark-32.png.*ReadBack.png' \
+    "${project_dir}/Scripts/build-app" \
+    || fail "build does not package the colored popover logo"
+
 print -n -- "fixture" > "${fixture_dir}/dist/ReadBack-0.3.0.dmg"
 "${fixture_dir}/Scripts/build-cask" > /dev/null
 
