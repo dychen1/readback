@@ -286,14 +286,22 @@ struct ReadBackPopover: View {
 
             Divider()
 
+            Label(
+                controller.modelInstalled
+                    ? "\(controller.activeModelName) ready"
+                    : "Model unavailable",
+                systemImage: controller.modelInstalled ? "checkmark.circle" : "exclamationmark.triangle"
+            )
+            .foregroundStyle(controller.modelInstalled ? Color.secondary : Color.orange)
+
             HStack {
-                Label(
-                    controller.modelInstalled
-                        ? "\(controller.activeModelName) ready"
-                        : "Model unavailable",
-                    systemImage: controller.modelInstalled ? "checkmark.circle" : "exclamationmark.triangle"
-                )
-                .foregroundStyle(controller.modelInstalled ? Color.secondary : Color.orange)
+                Toggle("Launch at login", isOn: Binding(
+                    get: { controller.launchAtLogin },
+                    set: { controller.setLaunchAtLogin($0) }
+                ))
+                .fixedSize()
+                .disabled(!controller.canManageLaunchAtLogin)
+
                 Spacer()
                 Button(ModelManagerPresentation.settingsButtonTitle) {
                     openWindow(id: "model-manager")
@@ -303,12 +311,6 @@ struct ReadBackPopover: View {
                     Task { await controller.quit() }
                 }
             }
-
-            Toggle("Launch at login", isOn: Binding(
-                get: { controller.launchAtLogin },
-                set: { controller.setLaunchAtLogin($0) }
-            ))
-            .disabled(!controller.canManageLaunchAtLogin)
         }
         .padding(14)
         .frame(width: 340)
