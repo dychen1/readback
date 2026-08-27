@@ -4,13 +4,14 @@ set -euo pipefail
 
 script_dir="${0:A:h}"
 project_dir="${script_dir:h}"
+assets_root="${READBACK_RELEASE_ASSETS_DIR:-${project_dir}/models}"
 model_revision="a71e4d38b236d968966a2002c4c895dbd12b1c3c"
 g2p_revision="9c692b92682d959d9013a9cfe6a49541997add18"
 lexicon_revision="a3d069caea9a2b63daed40834514431f73a2f11e"
 mlx_metal_sha256="70741174131dbf7fdd479cb730e06e08c358eac3bf7905d9e884e7960cfdd5b8"
-model_dir="${project_dir}/models/Kokoro-82M-bf16"
-languages_dir="${project_dir}/models/Languages"
-mlx_dir="${project_dir}/models/MLX/0.31.1"
+model_dir="${assets_root}/Kokoro-82M-bf16"
+languages_dir="${assets_root}/Languages"
+mlx_dir="${assets_root}/MLX/0.31.1"
 work_dir="$(mktemp -d)"
 
 trap 'rm -rf "${work_dir}"' EXIT
@@ -54,4 +55,4 @@ if [[ ! -s "${mlx_dir}/mlx.metallib" ]]; then
     unzip -jo "${mlx_wheel}" mlx/lib/mlx.metallib -d "${mlx_dir}"
 fi
 
-print "Release assets are ready in ${project_dir}/models"
+print "Release assets are ready in ${assets_root}"

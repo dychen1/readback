@@ -8,24 +8,47 @@ func configurationTests() -> [TestCase] {
                 modelDirectory: URL(fileURLWithPath: "/tmp/readback-models")
             )
 
+            try expectEqual(config.schemaVersion, 2, "schema version")
             try expectEqual(config.publicHost, "127.0.0.1", "public host")
             try expectEqual(config.publicPort, 51_280, "public port")
-            try expectEqual(config.model.id, "kokoro", "model ID")
-            try expectEqual(
-                config.model.repository,
-                "mlx-community/Kokoro-82M-bf16",
-                "model repository"
-            )
-            try expectEqual(
-                config.model.revision,
-                "a71e4d38b236d968966a2002c4c895dbd12b1c3c",
-                "model revision"
-            )
-            try expectEqual(config.model.directoryName, "Kokoro-82M-bf16", "model directory")
-            try expectEqual(config.defaultVoice, "af_heart", "default voice")
-            try expectEqual(config.defaultSpeed, 1.0, "default speed")
+            try expectEqual(config.activeModelID, .kokoro, "model ID")
+            try expectEqual(config.preferences(for: .kokoro)?.voiceID, "af_heart", "default voice")
+            try expectEqual(config.preferences(for: .kokoro)?.languageCode, "en", "default language")
+            try expectEqual(config.preferences(for: .kokoro)?.synthesisSpeed, 1.0, "default speed")
             try expectEqual(config.playbackRate, 1.0, "default playback rate")
             try expectEqual(config.paragraphPause, 0.05, "default paragraph pause")
+        },
+        TestCase(name: "configuration migrates version one model settings") {
+            let legacy = """
+            {
+              "publicHost": "127.0.0.1",
+              "publicPort": 51280,
+              "model": {
+                "id": "kokoro",
+                "repository": "mlx-community/Kokoro-82M-bf16",
+                "revision": "a71e4d38b236d968966a2002c4c895dbd12b1c3c",
+                "directoryName": "Kokoro-82M-bf16"
+              },
+              "modelDirectory": "file:///tmp/old-models/",
+              "defaultVoice": "bf_emma",
+              "defaultSpeed": 1.15,
+              "playbackRate": 1.5,
+              "paragraphPause": 0.125
+            }
+            """
+
+            let decoded = try JSONDecoder().decode(
+                AppConfiguration.self,
+                from: Data(legacy.utf8)
+            )
+
+            try expectEqual(decoded.schemaVersion, 2, "schema version")
+            try expectEqual(decoded.activeModelID, .kokoro, "active model")
+            try expectEqual(decoded.preferences(for: .kokoro)?.voiceID, "bf_emma", "voice")
+            try expectEqual(decoded.preferences(for: .kokoro)?.languageCode, "en", "language")
+            try expectEqual(decoded.preferences(for: .kokoro)?.synthesisSpeed, 1.15, "speed")
+            try expectEqual(decoded.playbackRate, 1.5, "playback rate")
+            try expectEqual(decoded.paragraphPause, 0.125, "paragraph pause")
         },
         TestCase(name: "configuration survives JSON round trip") {
             let original = AppConfiguration.default(
@@ -34,7 +57,18 @@ func configurationTests() -> [TestCase] {
             let data = try JSONEncoder().encode(original)
             let decoded = try JSONDecoder().decode(AppConfiguration.self, from: data)
 
-            try expectEqual(decoded, original, "decoded configuration")
+            try expectEqual(decoded.schemaVersion, original.schemaVersion, "schema version")
+            try expectEqual(decoded.publicHost, original.publicHost, "public host")
+            try expectEqual(decoded.publicPort, original.publicPort, "public port")
+            try expectEqual(decoded.activeModelID, original.activeModelID, "active model")
+            try expectEqual(decoded.modelPreferences, original.modelPreferences, "preferences")
+            try expectEqual(decoded.playbackRate, original.playbackRate, "playback rate")
+            try expectEqual(decoded.paragraphPause, original.paragraphPause, "paragraph pause")
+            try expectEqual(
+                decoded.modelDirectory,
+                URL(fileURLWithPath: "/"),
+                "runtime-only model directory"
+            )
         },
         TestCase(name: "configuration defaults playback rate when loading an older file") {
             let original = AppConfiguration.default(
@@ -123,7 +157,7 @@ func configurationTests() -> [TestCase] {
             let settings = SpeechSettings(configuration: configuration)
 
             try expectEqual(settings.voice, "bf_emma", "speech settings voice")
-            try expectEqual(settings.languageCode, "b", "speech settings language")
+            try expectEqual(settings.languageCode, "en", "speech settings language")
             try expectEqual(settings.paragraphPause, 0.225, "speech settings paragraph pause")
         },
         TestCase(name: "paragraph pause snaps saved values to 25 milliseconds") {
@@ -142,7 +176,7 @@ func configurationTests() -> [TestCase] {
             configuration.setParagraphPause(2.1)
             try expectEqual(configuration.paragraphPause, 0.25, "maximum paragraph pause")
         },
-        TestCase(name: "configuration store migrates a missing model root to the current default") {
+        TestCase(name: "configuration store keeps the current model root out of persisted settings") {
             let directory = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
             defer { try? FileManager.default.removeItem(at: directory) }
@@ -167,8 +201,8 @@ func configurationTests() -> [TestCase] {
             )
             try expectEqual(
                 persisted.modelDirectory,
-                currentRoot.standardizedFileURL,
-                "persisted migrated model root"
+                URL(fileURLWithPath: "/"),
+                "persisted model root"
             )
             try expectEqual(loaded.playbackRate, 1.5, "other settings survive migration")
         },

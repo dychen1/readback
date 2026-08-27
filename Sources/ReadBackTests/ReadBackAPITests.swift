@@ -11,57 +11,153 @@ private actor APIAudioPlayer: AudioPlaying {
     func resume() async {}
 }
 
-private actor APITestRuntime: SpeechModelRuntime {
-    private var prepared = false
+private actor APITestModelManager: ModelManaging {
+    private var requests: [SpeechRequest] = []
 
-    func prepare() async throws { prepared = true }
-    func isPrepared() async -> Bool { prepared }
-    func synthesize(_ request: SpeechRequest) async throws -> AudioClip {
-        AudioClip(data: Data(), format: request.format)
+    func snapshot() async -> ModelManagerSnapshot {
+        ModelManagerSnapshot(
+            models: [
+                ModelSnapshot(
+                    id: .kokoro,
+                    displayName: "Kokoro",
+                    origin: .bundled,
+                    storageState: .bundled,
+                    languages: [],
+                    canInstall: false,
+                    canRemove: false,
+                    canActivate: false
+                )
+            ],
+            activeModelID: .kokoro,
+            activePreferences: ModelPreference(
+                modelID: .kokoro,
+                voiceID: "af_heart",
+                languageCode: "en",
+                synthesisSpeed: 1
+            ),
+            runtimeState: .ready(.kokoro),
+            operation: .idle
+        )
     }
+
+    func updates() async -> AsyncStream<ModelManagerSnapshot> {
+        AsyncStream { $0.finish() }
+    }
+
+    func synthesize(_ request: SpeechRequest) async throws -> AudioClip {
+        requests.append(request)
+        return AudioClip(data: Data([0x01]), format: request.format)
+    }
+
+    func install(_ id: ModelID) async throws {}
+    func installLanguage(_ code: String, for id: ModelID) async throws {}
+    func registerLocalModel(at directory: URL) async throws -> ModelID { .local }
+    func remove(_ id: ModelID) async throws {}
+    func activate(_ id: ModelID) async throws {}
+    func updatePreferences(_ preferences: ModelPreference) async throws {}
+    func warmConfiguredModel() async {}
+
+    func receivedRequests() -> [SpeechRequest] { requests }
 }
 
 func readBackAPITests() -> [TestCase] {
     [
-        TestCase(name: "models endpoint reports the pinned local install") {
-            let root = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString, isDirectory: true)
-            defer { try? FileManager.default.removeItem(at: root) }
-            let model = root.appendingPathComponent(ModelDescriptor.kokoro.directoryName)
-            try FileManager.default.createDirectory(
-                at: model.appendingPathComponent("voices"),
-                withIntermediateDirectories: true
-            )
-            for path in ["config.json", "kokoro-v1_0.safetensors", "voices/af_heart.safetensors"] {
-                _ = FileManager.default.createFile(
-                    atPath: model.appendingPathComponent(path).path,
-                    contents: Data()
-                )
+        TestCase(name: "public model management routes do not exist") {
+            let fixture = APIFixture()
+            let app = Application(responder: fixture.api.makeRouter().buildResponder())
+            try await app.test(.router) { client in
+                for uri in [
+                    "/v1/models",
+                    "/v1/models/kokoro/load",
+                    "/v1/models/kokoro/download",
+                ] {
+                    try await client.execute(uri: uri, method: .get) { response in
+                        try expectEqual(response.status.code, 404, "removed route \(uri)")
+                    }
+                }
             }
-
-            let configuration = AppConfiguration.default(modelDirectory: root)
-            let runtime = APITestRuntime()
-            let coordinator = SpeechCoordinator(
-                synthesizer: runtime,
-                player: APIAudioPlayer()
-            )
-            let api = ReadBackAPI(
-                configuration: configuration,
-                modelStore: ModelStore(rootURL: root, supportedModels: [.kokoro]),
-                runtime: runtime,
-                coordinator: coordinator
-            )
-            let app = Application(responder: api.makeRouter().buildResponder())
+        },
+        TestCase(name: "speech rejects a model selector") {
+            let fixture = APIFixture()
+            let app = Application(responder: fixture.api.makeRouter().buildResponder())
+            let body = ByteBuffer(string: #"{"model":"kokoro","input":"hello"}"#)
 
             try await app.test(.router) { client in
-                try await client.execute(uri: "/v1/models", method: .get) { response in
-                    try expectEqual(response.status.code, 200, "models status")
-                    let decoded = try JSONDecoder().decode(ModelListResponse.self, from: response.body)
-                    try expectEqual(decoded.data.count, 1, "models count")
-                    try expect(decoded.data[0].installed, "model should be installed")
-                    try expectEqual(decoded.data[0].revision, ModelDescriptor.kokoro.revision, "pinned revision")
+                try await client.execute(
+                    uri: "/v1/audio/speech",
+                    method: .post,
+                    headers: [.contentType: "application/json"],
+                    body: body
+                ) { response in
+                    try expectEqual(response.status.code, 400, "speech status")
+                    let text = String(decoding: response.body.readableBytesView, as: UTF8.self)
+                    try expect(
+                        text.contains("model_selection_not_allowed"),
+                        "stable error code"
+                    )
+                }
+            }
+
+            let requestCount = await fixture.manager.receivedRequests().count
+            try expectEqual(requestCount, 0, "no synthesis")
+        },
+        TestCase(name: "speech without a model uses the active manager") {
+            let fixture = APIFixture()
+            let app = Application(responder: fixture.api.makeRouter().buildResponder())
+            let body = ByteBuffer(string: #"{"input":"hello","response_format":"wav"}"#)
+
+            try await app.test(.router) { client in
+                try await client.execute(
+                    uri: "/v1/audio/speech",
+                    method: .post,
+                    headers: [.contentType: "application/json"],
+                    body: body
+                ) { response in
+                    try expectEqual(response.status.code, 200, "speech status")
+                }
+            }
+
+            let requests = await fixture.manager.receivedRequests()
+            try expectEqual(requests.count, 1, "synthesis count")
+            try expectEqual(requests[0].input, "hello", "speech input")
+            try expectEqual(requests[0].voice, nil, "manager resolves voice")
+        },
+        TestCase(name: "health reports the active model and runtime") {
+            let fixture = APIFixture()
+            let app = Application(responder: fixture.api.makeRouter().buildResponder())
+
+            try await app.test(.router) { client in
+                try await client.execute(uri: "/health", method: .get) { response in
+                    try expectEqual(response.status.code, 200, "health status")
+                    let health = try JSONDecoder().decode(HealthResponse.self, from: response.body)
+                    try expectEqual(health.runtime, "ready", "runtime")
+                    try expectEqual(health.activeModel, "kokoro", "active model")
+                    try expect(health.modelInstalled, "model installed")
                 }
             }
         },
     ]
+}
+
+private struct APIFixture {
+    let manager: APITestModelManager
+    let api: ReadBackAPI
+
+    init() {
+        let manager = APITestModelManager()
+        self.manager = manager
+        let configuration = AppConfiguration.default(
+            modelDirectory: URL(fileURLWithPath: "/tmp")
+        )
+        let coordinator = SpeechCoordinator(
+            synthesizer: manager,
+            player: APIAudioPlayer()
+        )
+        let api = ReadBackAPI(
+            configuration: configuration,
+            modelManager: manager,
+            coordinator: coordinator
+        )
+        self.api = api
+    }
 }

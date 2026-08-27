@@ -37,6 +37,11 @@ struct ReadBackApp: App {
                 .accessibilityLabel("ReadBack")
         }
         .menuBarExtraStyle(.window)
+
+        Window("Models", id: "model-manager") {
+            ModelManagerView(controller: controller)
+                .frame(minWidth: 460, minHeight: 360)
+        }
     }
 }
 
@@ -70,8 +75,9 @@ private enum BrandImages {
     }
 }
 
-private struct ReadBackPopover: View {
+struct ReadBackPopover: View {
     @ObservedObject var controller: ServiceController
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -131,6 +137,38 @@ private struct ReadBackPopover: View {
             }
 
             Menu {
+                ForEach(controller.installedModels) { model in
+                    Button {
+                        controller.activateModel(model.id)
+                    } label: {
+                        if model.id == controller.activeModelID {
+                            Label(model.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(model.displayName)
+                        }
+                    }
+                }
+                Divider()
+                Button("Manage Models…") {
+                    openWindow(id: "model-manager")
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                }
+            } label: {
+                HStack {
+                    Text("Model")
+                    Spacer()
+                    Text(controller.activeModelName)
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .disabled(!controller.canChangeModel)
+
+            Menu {
                 ForEach(controller.voiceGroups, id: \.name) { group in
                     Section(group.name) {
                         ForEach(group.voices) { voice in
@@ -138,9 +176,9 @@ private struct ReadBackPopover: View {
                                 controller.setVoice(voice)
                             } label: {
                                 if voice.id == controller.selectedVoiceID {
-                                    Label(voice.name, systemImage: "checkmark")
+                                    Label(voice.displayName, systemImage: "checkmark")
                                 } else {
-                                    Text(voice.name)
+                                    Text(voice.displayName)
                                 }
                             }
                         }
@@ -159,31 +197,39 @@ private struct ReadBackPopover: View {
                 .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
-            .disabled(controller.voiceGroups.isEmpty)
+            .disabled(controller.voiceGroups.isEmpty || !controller.canChangeVoice)
 
             Menu {
-                ForEach(KokoroLanguagePackCatalog.all) { pack in
-                    if controller.isLanguageInstalled(pack) {
-                        Label(pack.name, systemImage: "checkmark")
+                ForEach(controller.activeLanguages) { language in
+                    if language.isInstalled {
+                        Button {
+                            controller.selectLanguage(language)
+                        } label: {
+                            if language.code == controller.selectedLanguageCode {
+                                Label(language.displayName, systemImage: "checkmark")
+                            } else {
+                                Text(language.displayName)
+                            }
+                        }
                     } else {
                         Button {
-                            controller.installLanguage(pack)
+                            controller.installLanguage(language)
                         } label: {
                             Label(
-                                controller.installingLanguageID == pack.id
-                                    ? "Installing \(pack.name)…"
-                                    : "Install \(pack.name)",
+                                controller.installingLanguageID == language.code
+                                    ? "Installing \(language.displayName)…"
+                                    : "Install \(language.displayName)",
                                 systemImage: "arrow.down.circle"
                             )
                         }
-                        .disabled(controller.installingLanguageID != nil)
+                        .disabled(controller.installingLanguageID != nil || !language.canInstall)
                     }
                 }
             } label: {
                 HStack {
                     Text("Languages")
                     Spacer()
-                    Text("\(controller.installedLanguageIDs.count) installed")
+                    Text(controller.selectedLanguageName)
                         .foregroundStyle(.secondary)
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.caption)
@@ -243,11 +289,17 @@ private struct ReadBackPopover: View {
 
             HStack {
                 Label(
-                    controller.modelInstalled ? "Kokoro ready" : "Kokoro unavailable",
+                    controller.modelInstalled
+                        ? "\(controller.activeModelName) ready"
+                        : "Model unavailable",
                     systemImage: controller.modelInstalled ? "checkmark.circle" : "exclamationmark.triangle"
                 )
                 .foregroundStyle(controller.modelInstalled ? Color.secondary : Color.orange)
                 Spacer()
+                Button("Models…") {
+                    openWindow(id: "model-manager")
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                }
                 Button("Quit") {
                     Task { await controller.quit() }
                 }
@@ -267,22 +319,22 @@ private struct ReadBackPopover: View {
 @MainActor
 final class ServiceController: ObservableObject {
     @Published private(set) var isRunning = false
-    @Published private(set) var isBusy = false
-    @Published private(set) var modelInstalled = false
-    @Published private(set) var status = "Starting…"
+    @Published var status = "Starting…"
     @Published private(set) var launchAtLogin = false
     @Published private(set) var shortcutStatus: String?
     @Published private(set) var clipboardPlaybackState: ClipboardPlaybackState = .idle
     @Published private(set) var playbackRate = PlaybackRate.default
     @Published private(set) var paragraphPause = ParagraphPause.default
-    @Published private(set) var selectedVoiceID = "af_heart"
-    @Published private(set) var voiceGroups: [KokoroVoiceGroup] = []
-    @Published private(set) var installedLanguageIDs = Set<String>()
-    @Published private(set) var installingLanguageID: String?
-
-    var selectedVoiceName: String {
-        KokoroVoiceCatalog.voice(id: selectedVoiceID)?.name ?? selectedVoiceID
-    }
+    @Published var selectedVoiceID: String? = "af_heart"
+    @Published var voiceGroups: [ModelVoiceGroup] = []
+    @Published var installingLanguageID: String?
+    @Published var modelSnapshot = ModelManagerSnapshot(
+        models: [],
+        activeModelID: nil,
+        activePreferences: nil,
+        runtimeState: .starting,
+        operation: .idle
+    )
 
     var clipboardActionLabel: String {
         switch clipboardPlaybackState {
@@ -293,15 +345,11 @@ final class ServiceController: ObservableObject {
         }
     }
 
-    private(set) var configuration: AppConfiguration
+    var configuration: AppConfiguration
     let canManageLaunchAtLogin: Bool
 
     private let paths: RuntimePaths
-    private let assets: ModelAssetLocations
-    private let workspace: ModelWorkspace
-    private let languagePackStore: LanguagePackStore
-    private let store: ModelStore
-    private let runtime: KokoroSpeechSynthesizer
+    let modelManager: any ModelManaging
     private let api: ReadBackAPI
     private let player: AVFoundationAudioPlayer
     private let clipboardSpeaker: VoicePipeTextSpeaker
@@ -328,70 +376,82 @@ final class ServiceController: ObservableObject {
                 ? developmentModel
                 : nil
         )
-        self.assets = assets
         let modelWorkspace = ModelWorkspace(
             bundledModelURL: assets.bundledModelURL,
             installedLanguagesURL: assets.installedLanguagesURL,
             runtimeModelURL: assets.runtimeModelURL
         )
-        workspace = modelWorkspace
         _ = try? modelWorkspace.prepare()
-        languagePackStore = LanguagePackStore(rootURL: assets.installedLanguagesURL)
+        let loadedConfiguration: AppConfiguration
         do {
-            configuration = try AppConfigurationStore().loadOrCreate(
+            loadedConfiguration = try AppConfigurationStore().loadOrCreate(
                 at: paths.configurationFile,
                 modelsDirectory: assets.runtimeModelURL.deletingLastPathComponent()
             )
         } catch {
-            configuration = .default(
+            loadedConfiguration = .default(
                 modelDirectory: assets.runtimeModelURL.deletingLastPathComponent()
             )
         }
+        configuration = loadedConfiguration
         configuration.modelDirectory = assets.runtimeModelURL.deletingLastPathComponent()
         try? AppConfigurationStore().save(configuration, at: paths.configurationFile)
         playbackRate = configuration.playbackRate
         paragraphPause = configuration.paragraphPause
-        let configuredVoiceID = configuration.defaultVoice
-        selectedVoiceID = configuredVoiceID
-        let modelPath = configuration.modelDirectory.appendingPathComponent(
-            configuration.model.directoryName,
+        selectedVoiceID = configuration.preferences(for: configuration.activeModelID)?.voiceID
+
+        let catalog = CuratedModelCatalog.bundled
+        let managedModelsURL = paths.supportDirectory.appendingPathComponent(
+            "Models",
             isDirectory: true
         )
-        let groups = KokoroVoiceCatalog.availableGroups(in: modelPath)
-        voiceGroups = groups
-        if !groups.contains(where: { group in
-            group.voices.contains { $0.id == configuredVoiceID }
-        }), let fallback = groups.first?.voices.first {
-            configuration.setDefaultVoice(fallback.id)
-            selectedVoiceID = fallback.id
-            try? AppConfigurationStore().save(configuration, at: paths.configurationFile)
-        }
-
-        store = ModelStore(
-            rootURL: configuration.modelDirectory,
-            supportedModels: [configuration.model]
+        let library = ModelLibrary(
+            catalog: catalog,
+            paths: ModelLibraryPaths(
+                managedModelsURL: managedModelsURL,
+                downloadsURL: paths.supportDirectory.appendingPathComponent(
+                    "Downloads",
+                    isDirectory: true
+                ),
+                localRegistrationURL: paths.supportDirectory.appendingPathComponent(
+                    "local-model.json"
+                )
+            ),
+            bundledModels: [.kokoro: assets.runtimeModelURL]
         )
-        let speechRuntime = KokoroSpeechSynthesizer(
-            modelDirectoryURL: modelPath,
+        let session = MLXSpeechModelSession(
             languageResourceRoots: [
                 assets.bundledLanguagesURL,
                 assets.installedLanguagesURL,
+                managedModelsURL
+                    .appendingPathComponent(ModelID.kokoro.rawValue, isDirectory: true)
+                    .appendingPathComponent(CuratedModelDefinition.kokoro.revision, isDirectory: true)
+                    .appendingPathComponent("Languages", isDirectory: true),
             ]
         )
-        runtime = speechRuntime
+        let activityGate = ReadBackActivityGate()
+        let manager = ModelManager(
+            catalog: catalog,
+            library: library,
+            session: session,
+            activityGate: activityGate,
+            configuration: configuration,
+            configurationURL: paths.configurationFile
+        )
+        modelManager = manager
         let audioPlayer = AVFoundationAudioPlayer()
         audioPlayer.setPlaybackRate(configuration.playbackRate)
         player = audioPlayer
         let coordinator = SpeechCoordinator(
-            synthesizer: speechRuntime,
-            player: audioPlayer
+            synthesizer: manager,
+            player: audioPlayer,
+            activityGate: activityGate
         )
         let settings = SpeechSettingsStore(configuration: configuration)
         speechSettings = settings
         api = ReadBackAPI(
             configuration: configuration,
-            modelStore: store,
-            runtime: speechRuntime,
+            modelManager: manager,
             coordinator: coordinator,
             speechSettings: settings
         )
@@ -417,9 +477,11 @@ final class ServiceController: ObservableObject {
         }
 
         Task {
-            await refreshModelState()
-            await refreshLanguageState()
+            await observeModelUpdates()
+        }
+        Task {
             start()
+            await manager.warmConfiguredModel()
         }
     }
 
@@ -429,10 +491,7 @@ final class ServiceController: ObservableObject {
         serviceTask = Task { [api] in
             do {
                 isRunning = true
-                status = modelInstalled ? "Loading Kokoro…" : "Kokoro unavailable"
-                if modelInstalled {
-                    Task { await prepareInstalledModel() }
-                }
+                status = "Loading model…"
                 try await api.run()
             } catch is CancellationError {
             } catch {
@@ -505,39 +564,6 @@ final class ServiceController: ObservableObject {
         }
     }
 
-    func setVoice(_ voice: KokoroVoice) {
-        guard voiceGroups.contains(where: { $0.voices.contains(voice) }) else { return }
-
-        if voice.id != selectedVoiceID {
-            configuration.setDefaultVoice(voice.id)
-            selectedVoiceID = voice.id
-            saveSpeechConfiguration(status: "Voice: \(voice.name)")
-        }
-        startClipboardSpeech("test, hello world", completionStatus: "Voice preview finished")
-    }
-
-    func isLanguageInstalled(_ pack: KokoroLanguagePack) -> Bool {
-        installedLanguageIDs.contains(pack.id)
-    }
-
-    func installLanguage(_ pack: KokoroLanguagePack) {
-        guard !pack.isBundled, installingLanguageID == nil else { return }
-        installingLanguageID = pack.id
-        status = "Installing \(pack.name)…"
-        Task {
-            do {
-                try await languagePackStore.install(packID: pack.id)
-                try workspace.prepare()
-                await refreshModelState()
-                await refreshLanguageState()
-                status = "\(pack.name) installed"
-            } catch {
-                status = "Could not install \(pack.name): \(error.localizedDescription)"
-            }
-            installingLanguageID = nil
-        }
-    }
-
     func setParagraphPause(_ seconds: Double) {
         let normalized = ParagraphPause.clamped(seconds)
         guard normalized != paragraphPause else { return }
@@ -590,7 +616,7 @@ final class ServiceController: ObservableObject {
         }
     }
 
-    private func startClipboardSpeech(
+    func startClipboardSpeech(
         _ text: String,
         completionStatus: String? = nil
     ) {
@@ -637,7 +663,7 @@ final class ServiceController: ObservableObject {
                 if clipboardRequestID == requestID {
                     finishClipboardRequest(
                         requestID: requestID,
-                        status: "The bundled Kokoro model is unavailable"
+                        status: "The active model is unavailable"
                     )
                 }
             } catch {
@@ -722,27 +748,6 @@ final class ServiceController: ObservableObject {
         self.status = status
     }
 
-    private func refreshModelState() async {
-        modelInstalled = (try? await store.installedModels().contains {
-            $0.descriptor.id == configuration.model.id
-        }) ?? false
-        let modelPath = configuration.modelDirectory.appendingPathComponent(
-            configuration.model.directoryName,
-            isDirectory: true
-        )
-        voiceGroups = KokoroVoiceCatalog.availableGroups(in: modelPath)
-    }
-
-    private func refreshLanguageState() async {
-        var installed = Set<String>()
-        for pack in KokoroLanguagePackCatalog.all {
-            if await languagePackStore.isInstalled(pack) {
-                installed.insert(pack.id)
-            }
-        }
-        installedLanguageIDs = installed
-    }
-
     private func saveSpeechConfiguration(status successStatus: String) {
         do {
             try AppConfigurationStore().save(configuration, at: paths.configurationFile)
@@ -782,24 +787,6 @@ final class ServiceController: ObservableObject {
         throw ServiceControllerError.publicServiceDidNotStart
     }
 
-    private func prepareInstalledModel() async {
-        status = "Warming Kokoro…"
-        do {
-            try await runtime.prepare()
-            _ = try await runtime.synthesize(
-                SpeechRequest(
-                    input: "Ready.",
-                    voice: configuration.defaultVoice,
-                    languageCode: SpeechSettings(configuration: configuration).languageCode,
-                    speed: configuration.defaultSpeed,
-                    format: .wav
-                )
-            )
-            status = "Ready"
-        } catch {
-            status = "Warm-up failed: \(error)"
-        }
-    }
 }
 
 enum ServiceControllerError: LocalizedError {

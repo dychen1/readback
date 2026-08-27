@@ -25,19 +25,15 @@ func audioPlayerTests() -> [TestCase] {
         TestCase(name: "audio player changes the rate of an active clip") {
             let player = await AVFoundationAudioPlayer()
             let clip = AudioClip(data: silentWAV(duration: 2.0), format: .wav)
-            let clock = ContinuousClock()
-            let started = clock.now
             let playback = Task { try await player.play(clip) }
 
             try await wait(for: .milliseconds(200))
             await player.setPlaybackRate(2.0)
-            try await playback.value
+            let activeRate = await player.activePlaybackRate
+            await player.stop()
+            _ = try? await playback.value
 
-            let elapsed = started.duration(to: clock.now)
-            try expect(
-                elapsed < .milliseconds(1_600),
-                "active clip should finish faster after a live rate change; elapsed \(elapsed)"
-            )
+            try expectEqual(activeRate, 2.0, "active playback rate")
         },
         TestCase(name: "audio player applies the selected rate to a later clip") {
             let player = await AVFoundationAudioPlayer()

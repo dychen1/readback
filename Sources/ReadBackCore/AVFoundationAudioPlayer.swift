@@ -13,6 +13,10 @@ public final class AVFoundationAudioPlayer: NSObject, AudioPlaying, AVAudioPlaye
     private var playbackGeneration = 0
     public private(set) var playbackRate = PlaybackRate.default
 
+    public var activePlaybackRate: Double? {
+        audioPlayer.map { Double($0.rate) }
+    }
+
     public override init() {}
 
     public func play(_ clip: AudioClip) async throws {

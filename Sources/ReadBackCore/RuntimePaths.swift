@@ -62,9 +62,7 @@ public struct AppConfigurationStore: Sendable {
                 from: Data(contentsOf: url)
             )
             let currentDefault = modelsDirectory.standardizedFileURL
-            if configuration.modelDirectory.standardizedFileURL != currentDefault,
-               !FileManager.default.fileExists(atPath: configuration.modelDirectory.path)
-            {
+            if configuration.modelDirectory.standardizedFileURL != currentDefault {
                 configuration.modelDirectory = currentDefault
                 try save(configuration, at: url)
             }

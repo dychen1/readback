@@ -1,265 +1,129 @@
 # ReadBack
 
-A native macOS menu-bar service that turns streamed text into local speech with Kokoro and MLX.
+## TL;DR
 
-## Overview
+ReadBack is a native macOS menu-bar app that turns copied or streamed text into speech on your Mac. The app includes Kokoro 82M BF16, English, and French, so a new install works offline. Users can install other supported Kokoro languages with one click or register one compatible local MLX model. ReadBack keeps one model active, and every local HTTP, WebSocket, clipboard, and command-line request uses that model.
 
-ReadBack runs text-to-speech on an Apple Silicon Mac. Start the menu-bar app, download the pinned Kokoro model, then pipe text into `voicepipe` or call the local HTTP API. After setup, text, inference, audio, and playback stay on the Mac.
+## What it includes
 
-## Executive summary
+- A Swift menu-bar app for model choice, voices, playback, and service state
+- Native MLX-Audio Swift inference in the app process
+- AVFoundation playback from memory
+- A loopback HTTP and WebSocket service on `127.0.0.1:51280`
+- `voicepipe`, a small command that speaks streamed standard input
+- Bundled Kokoro 82M BF16 with six English voices and one French voice
+- One-click installs for Japanese, Mandarin Chinese, Spanish, Hindi, Italian, and Brazilian Portuguese
+- One local MLX model slot for technical users
 
-ReadBack provides three parts:
+ReadBack has no Python service, database, account, or telemetry code. It targets macOS 14 or later on Apple Silicon.
 
-- A native Swift menu-bar app that owns the local service and model backend.
-- A loopback HTTP and WebSocket API for speech generation and playback.
-- A `voicepipe` command that reads live text from standard input and speaks complete chunks as they arrive.
+## Install
 
-The app runs a pinned MLX-Audio server as a child process, uses the pinned Kokoro 82M model, and plays WAV data from memory with AVFoundation. Both services bind to `127.0.0.1`. Settings live in a JSON file; there is no database.
+Release builds can ship as a self-contained DMG or Homebrew Cask. The app bundle contains the native runtime, MLX Metal library, Kokoro weights, and its included language files.
 
-This project targets macOS 14 or later on Apple Silicon. It is a source build, not a signed or notarized release.
-
-## Quick start
-
-### 1. Install the prerequisites
-
-You need:
-
-- macOS 14 or later
-- An Apple Silicon Mac
-- A Swift toolchain that can build a Swift 6.2 package
-- [`uv`](https://docs.astral.sh/uv/)
-
-Install `uv` with Homebrew if needed:
-
-```sh
-brew install uv
-```
-
-### 2. Build the app
-
-From the repository root:
+To build from source:
 
 ```sh
 Scripts/build-app
+open dist/ReadBack.app
 ```
 
-This creates an ad hoc signed development app at `dist/ReadBack.app`. Open it with:
+The build needs a Swift 6.2 toolchain and network access the first time it resolves packages and release assets. The built app does not need those tools.
 
-```sh
-open "dist/ReadBack.app"
-```
+## Read copied text
 
-The waveform icon will appear in the macOS menu bar.
+Copy up to 2,000 characters, then press `Option-Command-R` (`⌥⌘R`). Press the same shortcut again to pause and once more to resume from the same audio position. If the clipboard changes, ReadBack stops the old speech and starts the new text from the beginning.
 
-To read copied text, copy up to 2,000 characters from any app and press
-`Option-Command-R` (`⌥⌘R`). With the same text still on the clipboard, press
-the shortcut again to pause at the current audio position and press it once
-more to resume. If the clipboard text changes, the shortcut stops the current
-read-back and starts the new text from the beginning. You can use the same
-dynamic action from the menu-bar app.
-
-Use the **Playback Speed** slider to change the current or next read-back from
-`0.5×` through `2×` in `0.25×` steps. Changes take effect at the current
-audio position without generating the speech again, including while paused.
-The default is `1×`, and the app saves the selected rate for later launches.
-
-Choose **Voice** to select a short curated list for each supported language.
-Each item shows only the voice name. Choosing any voice selects it and
-immediately says “test, hello world” as a preview.
-
-Use the **Paragraph Pause** slider to add a saved gap from `0 ms` through
-`2,000 ms` in `50 ms` steps. The default is `150 ms`. Pause and resume preserve
-the unused part of a paragraph gap.
-
-Before synthesis, ReadBack removes common Markdown formatting such as headings,
-emphasis, list markers, quotes, links, tables, and code delimiters. It speaks the
-readable content and keeps paragraph breaks.
-
-| Current state | Clipboard | `⌥⌘R` action |
+| Current state | Clipboard | Shortcut action |
 | --- | --- | --- |
 | Idle | Valid text | Start from the beginning |
-| Starting | Same text | Cancel the pending read-back |
-| Playing | Same text | Pause at the current audio position |
-| Paused | Same text | Resume at the same audio position |
-| Starting, playing, or paused | Changed text | Stop the old request and start the new text |
-| Any active state | Empty, non-text, or too long | Keep the current read-back unchanged |
+| Starting | Same text | Cancel |
+| Playing | Same text | Pause |
+| Paused | Same text | Resume |
+| Any active state | Changed text | Replace the current read-back |
 
-### 3. Download and load Kokoro
+The menu-bar popover has the same Read Clipboard action.
 
-Open the menu-bar item and choose **Download Kokoro**.
+## App controls
 
-The app downloads this exact model revision:
+The popover provides:
 
-```text
-Repository: mlx-community/Kokoro-82M-bf16
-Revision:   a71e4d38b236d968966a2002c4c895dbd12b1c3c
-```
+- An installed-model selector
+- Voice choices grouped by installed language
+- Automatic voice preview with `test, hello world`
+- A paragraph-pause slider from `0 ms` to `250 ms` in `25 ms` steps; the default is `50 ms`
+- A playback-speed slider from `0.5×` to `2×` in `0.25×` steps; the default is `1×`
+- Start, stop, launch-at-login, and clipboard controls
+- A Models window for installs, removal, and local model registration
 
-The first start may also download Python 3.12 and the pinned Python packages used by the backend.
+Playback speed can change during active or paused speech without new synthesis. Before synthesis, ReadBack removes common Markdown markers while it keeps readable text and paragraph breaks.
 
-### 4. Read text aloud
+## Models and languages
 
-In another terminal:
+Kokoro is bundled, active by default, and cannot be removed. English and French work without another download. The Models window installs other supported language files from pinned revisions and checks each file's size and SHA-256 hash before it publishes the install.
+
+ReadBack stores settings per model. Switching back to a model restores its last voice and language. It keeps only one model loaded, then clears the old MLX cache during a switch.
+
+### Add a local model
+
+Choose **Models… → Choose Local MLX Model…** and select a model directory. ReadBack uses the folder in place and never copies or deletes its weights. The current release accepts local Kokoro-compatible MLX folders with `config.json` and SafeTensors weights. It performs a real load and preview before it makes the model active.
+
+Registering a new local folder replaces the old registration. You must switch away from the local model first.
+
+## Stream text with `voicepipe`
+
+The bundled command reads UTF-8 text from standard input:
 
 ```sh
 printf 'Hello from ReadBack.' |
-  "dist/ReadBack.app/Contents/MacOS/voicepipe"
+  dist/ReadBack.app/Contents/MacOS/voicepipe
 ```
 
-`voicepipe` exits after the service has played all submitted text.
-
-## Use `voicepipe`
-
-`voicepipe` reads UTF-8 text from standard input and sends it to the local WebSocket service.
-
-Build the command without creating the app bundle:
+For a debug build:
 
 ```sh
 Scripts/swiftw build
-```
-
-Speak fixed text:
-
-```sh
-printf 'This text is generated and played on this Mac.' |
-  .build/debug/voicepipe
-```
-
-Pipe a live command:
-
-```sh
 your-command | .build/debug/voicepipe
 ```
 
-The client sends text as it arrives and commits buffered input after 300 milliseconds of inactivity. The service also splits input at sentence and paragraph boundaries and caps each speech segment at 250 Unicode characters.
-
-Override the WebSocket URL when needed:
-
-```sh
-printf 'Hello.' |
-  .build/debug/voicepipe \
-  --url ws://127.0.0.1:51280/v1/readback/stream
-```
-
-## Menu-bar controls
-
-The menu-bar app provides:
-
-- Current service status and public API address
-- Start and stop controls
-- Read Clipboard with the global `⌥⌘R` shortcut
-- Curated voice choices grouped by language, plus voice preview
-- Paragraph-pause slider from `0 ms` through `2,000 ms` in `50 ms` steps
-- Live playback-speed slider from `0.5×` through `2×` in `0.25×` steps
-- Kokoro download and reload
-- Launch at login when running from the app bundle
-- Quit with managed backend shutdown
-
-When an installed model loads, the app runs a short warm-up request so later speech requests avoid the full cold-start cost.
-
-## How it works
-
-```text
-stdin or API client
-        |
-        v
-voicepipe or HTTP request
-        |
-        v
-ReadBack on 127.0.0.1:51280
-        |
-        +-- text chunking and playback queue
-        |
-        v
-MLX-Audio on 127.0.0.1:51281
-        |
-        v
-Kokoro on MLX
-        |
-        v
-WAV bytes in memory -> AVFoundation playback
-```
-
-| Process | Address | Purpose |
-| --- | --- | --- |
-| ReadBack | `127.0.0.1:51280` | Public HTTP and WebSocket API |
-| MLX-Audio | `127.0.0.1:51281` | App-managed model server |
-
-The Swift app owns both the public service and the MLX-Audio child process. The public service uses Hummingbird. The backend runs:
-
-```text
-Python 3.12
-mlx-audio[server]==0.5.0
-misaki[en]==0.9.4
-```
-
-The app supports one active playback session at a time. Streamed input has a 2,000-character pending-input limit and applies backpressure while playback catches up.
+`voicepipe` sends text as it arrives, commits buffered input after 300 milliseconds without input, and exits after playback finishes. It does not accept a model option; it always uses the model active in the app.
 
 ## HTTP API
 
-The public API listens at `http://127.0.0.1:51280`.
+The public service listens only on `http://127.0.0.1:51280` by default.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/health` | Report service, backend, and model state |
-| `GET` | `/v1/models` | List the supported model and its install state |
-| `POST` | `/v1/models/kokoro/download` | Download the pinned Kokoro revision |
-| `POST` | `/v1/models/kokoro/load` | Load the installed Kokoro model |
-| `DELETE` | `/v1/models/kokoro` | Delete the local Kokoro model |
-| `POST` | `/v1/audio/speech` | Return generated audio bytes |
-| `POST` | `/play` | Generate and play speech on the Mac |
-| `GET` upgrade | `/v1/readback/stream` | Open the read-back WebSocket |
+| `GET` | `/health` | Report the active model and runtime state |
+| `POST` | `/v1/audio/speech` | Return WAV or PCM audio |
+| `POST` | `/play` | Generate and play speech on this Mac |
+| WebSocket | `/v1/readback/stream` | Stream text and playback controls |
 
-Check health:
-
-```sh
-curl http://127.0.0.1:51280/health
-```
-
-Generate a WAV file:
+Generate a WAV file with the app's active model:
 
 ```sh
 curl \
   --request POST \
   --header 'Content-Type: application/json' \
   --data '{
-    "model": "kokoro",
     "input": "Save this speech to a WAV file.",
-    "voice": "af_heart",
-    "lang_code": "a",
-    "speed": 1.0,
     "response_format": "wav"
   }' \
   --output speech.wav \
   http://127.0.0.1:51280/v1/audio/speech
 ```
 
-The speech endpoint supports `wav` and `pcm` responses.
-
-Generate and play speech on the Mac:
+Play speech:
 
 ```sh
 curl \
   --request POST \
   --header 'Content-Type: application/json' \
-  --data '{
-    "model": "kokoro",
-    "input": "Play this on the Mac.",
-    "voice": "af_heart",
-    "speed": 1.0
-  }' \
+  --data '{"input":"Play this on the Mac."}' \
   http://127.0.0.1:51280/play
 ```
 
-The `/play` request completes after playback finishes.
-
-Manage the model:
-
-```sh
-curl --request POST http://127.0.0.1:51280/v1/models/kokoro/download
-curl --request POST http://127.0.0.1:51280/v1/models/kokoro/load
-curl --request DELETE http://127.0.0.1:51280/v1/models/kokoro
-```
+Clients cannot list, install, remove, load, or select models. A speech request that contains a `model` key returns HTTP 400 with `model_selection_not_allowed`. Change the active model in the ReadBack app.
 
 ## WebSocket protocol
 
@@ -276,140 +140,78 @@ Client events:
 {"type":"playback.cancel"}
 ```
 
-The service may send:
+Server event types include `session.ready`, `speech.queued`, `speech.started`, `speech.finished`, `playback.paused`, `playback.resumed`, `queue.paused`, `queue.resumed`, `session.finished`, and `error`.
 
-- `session.ready`
-- `speech.queued`
-- `speech.started`
-- `speech.finished`
-- `playback.paused`
-- `playback.resumed`
-- `queue.paused`
-- `queue.resumed`
-- `session.finished`
-- `error`
-
-Server events contain a `session_id`. Speech events may contain a `sequence`; errors may contain a `message`.
-
-```json
-{
-  "type": "speech.started",
-  "session_id": "A4E55B8E-19C4-4D57-9B7E-D3391DAF6682",
-  "sequence": 0
-}
-```
-
-## Model and local files
-
-ReadBack currently supports one model:
-
-| ID | Repository | Revision | Default voice |
-| --- | --- | --- | --- |
-| `kokoro` | `mlx-community/Kokoro-82M-bf16` | `a71e4d38b236d968966a2002c4c895dbd12b1c3c` | `af_heart` |
-
-Model weights are not tracked by Git. The repository ignores `models/**`.
-
-When you run the package from the repository root, the default model directory is `models/Kokoro-82M-bf16`. Download the pinned revision there directly with:
-
-```sh
-uvx --from huggingface-hub hf download \
-  mlx-community/Kokoro-82M-bf16 \
-  --revision a71e4d38b236d968966a2002c4c895dbd12b1c3c \
-  --local-dir models/Kokoro-82M-bf16
-```
-
-When you run the built app outside the repository, it uses:
+## How it works
 
 ```text
-~/Library/Application Support/ReadBack/models
+clipboard, voicepipe, or HTTP
+              |
+              v
+  local Hummingbird service
+              |
+              v
+     active ModelManager
+              |
+              v
+    MLX-Audio Swift model
+              |
+              v
+ WAV bytes -> AVFoundation
 ```
 
-Other local files live under `~/Library/Application Support/ReadBack/`:
+`ModelManager` owns the curated catalog, verified installs, local bookmark, saved preferences, and the single loaded MLX session. `SpeechCoordinator` owns the playback queue. A shared activity gate stops model switches from racing with speech.
 
-| File | Purpose |
+## Local files
+
+ReadBack stores app data under:
+
+```text
+~/Library/Application Support/ReadBack/
+```
+
+| Path | Purpose |
 | --- | --- |
-| `config.json` | Hosts, ports, model path, voice, synthesis speed, paragraph pause, and playback rate |
-| `backend.log` | MLX-Audio standard output and errors |
+| `config.json` | Active model, per-model choices, playback speed, paragraph pause, host, and port |
+| `Models/` | Verified model and optional language downloads |
+| `RuntimeModels/` | Runtime links for the bundled Kokoro model |
+| `local-model.json` | One security-scoped local folder registration |
 
-ReadBack stores configuration in JSON. It does not use SQLAlchemy or any other database.
-
-Set a custom model root before the app creates its first config file:
-
-```sh
-READBACK_MODELS_DIR=/absolute/path/to/models \
-  Scripts/swiftw run readback
-```
-
-## Privacy and network access
-
-Both services bind only to `127.0.0.1` by default.
-
-After setup:
-
-- Text input stays on the Mac.
-- Kokoro inference runs on the Mac through MLX.
-- Generated audio stays in memory unless an API client saves it.
-- Playback uses AVFoundation.
-- This project has no database, account system, or telemetry code.
-
-Network access is required when the app first resolves Python packages or downloads model files from package and model hosts.
-
-The local API has no authentication. Do not expose it on a public or shared network.
-
-## Requirements
-
-- macOS 14 or later
-- Apple Silicon
-- Swift package tools version 6.2
-- `uv`
-- Network access for initial dependency and model downloads
-- About 400 MB for the current Kokoro checkout, plus package caches and build output
+Model weights and generated app bundles are not tracked by Git.
 
 ## Build and test
 
-Use the repository wrapper for Swift package commands:
-
 ```sh
 Scripts/swiftw build
-```
-
-The wrapper sets isolated SwiftPM caches and the SDK compatibility flags used by the current development toolchain.
-
-Run the custom test harness:
-
-```sh
 Scripts/swiftw run readback-tests
+Scripts/test-version
+Scripts/test-packaging-version
 ```
 
-Build the menu-bar app and bundled command:
+Build the app or DMG:
 
 ```sh
 Scripts/build-app
+Scripts/build-dmg
 ```
 
-The build script creates an ad hoc signed development bundle. It does not produce a notarized release.
+To reuse release assets already stored elsewhere:
 
-## Current limits
+```sh
+READBACK_RELEASE_ASSETS_DIR=/absolute/path/to/models Scripts/build-app
+```
 
-- Only the pinned Kokoro model is exposed through the public model API.
-- Only one playback session can run at a time.
-- In-memory playback accepts WAV data.
-- The app has no release installer or automatic updater.
-- The HTTP and WebSocket APIs have no authentication.
-- Model download, backend startup, and model warm-up can take time on the first run.
+## Privacy and limits
+
+- Text, inference, generated audio, and playback stay on the Mac.
+- The local service has no authentication. Do not expose it beyond loopback.
+- ReadBack supports one playback session and one loaded model at a time.
+- The local model slot supports known runtime profiles, not arbitrary code or repositories.
+- The app has no automatic updater yet.
 
 ## Upstream projects
 
-ReadBack builds on:
-
-- [MLX-Audio](https://github.com/Blaizzy/mlx-audio) for Apple Silicon audio inference and the model server
-- [Kokoro](https://huggingface.co/mlx-community/Kokoro-82M-bf16) for text-to-speech
-- [Misaki](https://github.com/hexgrad/misaki) for English text processing
-- [Hummingbird](https://github.com/hummingbird-project/hummingbird) for the Swift HTTP service
-- [Hummingbird WebSocket](https://github.com/hummingbird-project/hummingbird-websocket) for streamed input
-- Apple AVFoundation for in-memory playback
-
-The README structure follows patterns from [MLX-Audio](https://github.com/Blaizzy/mlx-audio#readme), [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI#readme), [Ollama](https://github.com/ollama/ollama#readme), [Ice](https://github.com/jordanbaird/Ice#readme), and [SwiftBar](https://github.com/swiftbar/SwiftBar#readme).
+ReadBack uses [MLX-Audio Swift](https://github.com/Blaizzy/mlx-audio-swift), [Kokoro](https://huggingface.co/mlx-community/Kokoro-82M-bf16), [Hummingbird](https://github.com/hummingbird-project/hummingbird), [Hummingbird WebSocket](https://github.com/hummingbird-project/hummingbird-websocket), and Apple AVFoundation.
 
 ## License
 

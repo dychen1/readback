@@ -5,13 +5,37 @@ import HummingbirdWSTesting
 import ReadBackCore
 import ReadBackService
 
-private actor ImmediateSynthesizer: SpeechModelRuntime {
-    func prepare() async throws {}
-    func isPrepared() async -> Bool { true }
+private actor ImmediateSynthesizer: ModelManaging {
+    func snapshot() async -> ModelManagerSnapshot {
+        ModelManagerSnapshot(
+            models: [],
+            activeModelID: .kokoro,
+            activePreferences: ModelPreference(
+                modelID: .kokoro,
+                voiceID: "af_heart",
+                languageCode: "en",
+                synthesisSpeed: 1
+            ),
+            runtimeState: .ready(.kokoro),
+            operation: .idle
+        )
+    }
+
+    func updates() async -> AsyncStream<ModelManagerSnapshot> {
+        AsyncStream { $0.finish() }
+    }
 
     func synthesize(_ request: SpeechRequest) async throws -> AudioClip {
         AudioClip(data: Data(), format: .wav)
     }
+
+    func install(_ id: ModelID) async throws {}
+    func installLanguage(_ code: String, for id: ModelID) async throws {}
+    func registerLocalModel(at directory: URL) async throws -> ModelID { .local }
+    func remove(_ id: ModelID) async throws {}
+    func activate(_ id: ModelID) async throws {}
+    func updatePreferences(_ preferences: ModelPreference) async throws {}
+    func warmConfiguredModel() async {}
 }
 
 private actor CancelAwareAudioPlayer: AudioPlaying {
@@ -54,8 +78,7 @@ func readBackWebSocketTests() -> [TestCase] {
             )
             let api = ReadBackAPI(
                 configuration: configuration,
-                modelStore: ModelStore(rootURL: root, supportedModels: [.kokoro]),
-                runtime: runtime,
+                modelManager: runtime,
                 coordinator: coordinator
             )
             let router = api.makeRouter()

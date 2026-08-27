@@ -35,10 +35,16 @@ func wait(for duration: Duration) async throws {
 enum ReadBackTestRunner {
     static func main() async {
         let tests = configurationTests()
+            + modelCatalogTests()
             + modelAssetsTests()
+            + modelLibraryTests()
+            + modelManagerTests()
+            + modelManagerPresentationTests()
+            + readBackActivityGateTests()
             + modelWorkspaceTests()
             + wavEncoderTests()
             + inferenceSmokeTests()
+            + mlxSpeechModelSessionTests()
             + voiceCatalogTests()
             + audioPlayerTests()
             + modelStoreTests()
