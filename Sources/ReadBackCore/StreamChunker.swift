@@ -77,16 +77,23 @@ public struct StreamingTextChunker: Sendable {
 
     private func sentenceBoundary() -> Boundary? {
         var index = buffer.startIndex
+        var candidate: Boundary?
         while index < buffer.endIndex {
             let character = buffer[index]
             let after = buffer.index(after: index)
             if ".!?".contains(character),
                after == buffer.endIndex || buffer[after].isWhitespace {
-                return Boundary(contentEnd: after, consumedEnd: after, endsParagraph: false)
+                let length = buffer.distance(from: buffer.startIndex, to: after)
+                guard length <= maxCharacters else { break }
+                candidate = Boundary(
+                    contentEnd: after,
+                    consumedEnd: after,
+                    endsParagraph: false
+                )
             }
             index = after
         }
-        return nil
+        return candidate
     }
 
     private mutating func trimLeadingWhitespace() {

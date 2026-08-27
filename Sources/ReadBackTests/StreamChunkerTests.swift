@@ -18,6 +18,22 @@ func streamChunkerTests() -> [TestCase] {
                 "retained remainder"
             )
         },
+        TestCase(name: "chunker coalesces complete sentences appended together") {
+            var chunker = StreamingTextChunker(maxCharacters: 250)
+
+            let chunks = chunker.append("First sentence. Second sentence.")
+
+            try expectEqual(
+                chunks,
+                [
+                    StreamedTextChunk(
+                        text: "First sentence. Second sentence.",
+                        endsParagraph: false
+                    )
+                ],
+                "coalesced sentence chunk"
+            )
+        },
         TestCase(name: "chunker emits at a paragraph boundary") {
             var chunker = StreamingTextChunker(maxCharacters: 250)
 
