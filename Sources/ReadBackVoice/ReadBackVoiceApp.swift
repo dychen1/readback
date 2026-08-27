@@ -35,6 +35,9 @@ struct ReadBackApp: App {
         } label: {
             Image(nsImage: BrandImages.menuBarWaveform)
                 .accessibilityLabel("ReadBack")
+                .task {
+                    controller.launch()
+                }
         }
         .menuBarExtraStyle(.window)
 
@@ -347,6 +350,7 @@ final class ServiceController: ObservableObject {
     let modelManager: any ModelManaging
     private let api: ReadBackAPI
     private let player: AVFoundationAudioPlayer
+    private let modelWarmup: BackgroundModelWarmup
     private let clipboardSpeaker: VoicePipeTextSpeaker
     private let clipboardAction: ClipboardReadBackAction
     private let speechSettings: SpeechSettingsStore
@@ -435,6 +439,9 @@ final class ServiceController: ObservableObject {
             configurationURL: paths.configurationFile
         )
         modelManager = manager
+        modelWarmup = BackgroundModelWarmup {
+            await manager.warmConfiguredModel()
+        }
         let audioPlayer = AVFoundationAudioPlayer()
         audioPlayer.setPlaybackRate(configuration.playbackRate)
         player = audioPlayer
@@ -475,9 +482,12 @@ final class ServiceController: ObservableObject {
         Task {
             await observeModelUpdates()
         }
-        Task {
-            start()
-            await manager.warmConfiguredModel()
+    }
+
+    func launch() {
+        start()
+        Task { [modelWarmup] in
+            await modelWarmup.start()
         }
     }
 
@@ -528,6 +538,7 @@ final class ServiceController: ObservableObject {
         }
         serviceTask?.cancel()
         serviceTask = nil
+        await modelWarmup.cancel()
         NSApplication.shared.terminate(nil)
     }
 

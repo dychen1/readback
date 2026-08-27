@@ -39,6 +39,7 @@ enum ReadBackTestRunner {
             + modelAssetsTests()
             + modelLibraryTests()
             + modelManagerTests()
+            + backgroundModelWarmupTests()
             + modelManagerPresentationTests()
             + readBackActivityGateTests()
             + modelWorkspaceTests()
