@@ -1,0 +1,96 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+script_dir="${0:A:h}"
+project_dir="${script_dir:h}"
+version_file="${project_dir}/VERSION"
+
+fail() {
+    print -u2 "version: $1"
+    exit 1
+}
+
+read_version() {
+    [[ -f "${version_file}" ]] || fail "missing ${version_file}"
+
+    local version
+    version="$(<"${version_file}")"
+    [[ "${version}" =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]] \
+        || fail "VERSION must use MAJOR.MINOR.PATCH"
+
+    local part
+    for part in "${(@s:.:)version}"; do
+        [[ "${part}" == "0" || "${part}" != 0* ]] \
+            || fail "VERSION numbers cannot have leading zeroes"
+    done
+
+    print -r -- "${version}"
+}
+
+bump_version() {
+    local component="${1:-}"
+    local version
+    version="$(read_version)"
+    local -a parts=("${(@s:.:)version}")
+    local major="${parts[1]}"
+    local minor="${parts[2]}"
+    local patch="${parts[3]}"
+
+    case "${component}" in
+        major)
+            major=$((major + 1))
+            minor=0
+            patch=0
+            ;;
+        minor)
+            minor=$((minor + 1))
+            patch=0
+            ;;
+        patch)
+            patch=$((patch + 1))
+            ;;
+        *)
+            fail "bump requires major, minor, or patch"
+            ;;
+    esac
+
+    local next_version="${major}.${minor}.${patch}"
+    print -r -- "${next_version}" > "${version_file}"
+    print -r -- "${next_version}"
+}
+
+build_number() {
+    local number="${READBACK_BUILD_NUMBER:-}"
+    if [[ -z "${number}" ]]; then
+        number="$(git -C "${project_dir}" rev-list --count HEAD 2>/dev/null || true)"
+    fi
+    [[ "${number}" =~ '^[1-9][0-9]*$' ]] \
+        || fail "build number must be a positive integer"
+    print -r -- "${number}"
+}
+
+case "${1:-}" in
+    current)
+        read_version
+        ;;
+    bump)
+        bump_version "${2:-}"
+        ;;
+    build-number)
+        build_number
+        ;;
+    verify-tag)
+        version="$(read_version)"
+        tag="${2:-${GITHUB_REF_NAME:-}}"
+        if [[ -z "${tag}" ]]; then
+            tag="$(git -C "${project_dir}" describe --tags --exact-match HEAD 2>/dev/null || true)"
+        fi
+        [[ "${tag}" == "v${version}" ]] \
+            || fail "release tag '${tag:-none}' does not match VERSION ${version}"
+        print -r -- "${tag}"
+        ;;
+    *)
+        fail "use current, bump, build-number, or verify-tag"
+        ;;
+esac

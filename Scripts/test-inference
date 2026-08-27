@@ -1,0 +1,15 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+script_dir="${0:A:h}"
+project_dir="${script_dir:h}"
+
+"${script_dir}/fetch-release-assets"
+"${script_dir}/swiftw" build --product readback-tests
+cp -f \
+    "${project_dir}/models/MLX/0.31.1/mlx.metallib" \
+    "${project_dir}/.build/debug/mlx.metallib"
+READBACK_RUN_INFERENCE_SMOKE=1 \
+READBACK_TEST_FILTER="native Kokoro" \
+    "${project_dir}/.build/debug/readback-tests"

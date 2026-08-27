@@ -8,6 +8,8 @@
     <string>readback</string>
     <key>CFBundleIdentifier</key>
     <string>ai.sanrin.readback</string>
+    <key>CFBundleIconFile</key>
+	<string>ReadBack.png</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
@@ -15,11 +17,13 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>0.0.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>0</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>LSMultipleInstancesProhibited</key>
+    <true/>
     <key>LSUIElement</key>
     <true/>
 </dict>

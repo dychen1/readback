@@ -1,0 +1,33 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+script_dir="${0:A:h}"
+project_dir="${script_dir:h}"
+version="$("${script_dir}/version" current)"
+app_path="${project_dir}/dist/ReadBack.app"
+dmg_path="${project_dir}/dist/ReadBack-${version}.dmg"
+staging_dir="$(mktemp -d)"
+
+trap 'rm -rf "${staging_dir}"' EXIT
+
+"${script_dir}/build-app"
+ditto "${app_path}" "${staging_dir}/ReadBack.app"
+ln -s /Applications "${staging_dir}/Applications"
+rm -f "${dmg_path}"
+hdiutil create \
+    -volname "ReadBack" \
+    -srcfolder "${staging_dir}" \
+    -ov \
+    -format UDZO \
+    "${dmg_path}"
+
+if [[ -n "${READBACK_NOTARY_PROFILE:-}" ]]; then
+    xcrun notarytool submit "${dmg_path}" \
+        --keychain-profile "${READBACK_NOTARY_PROFILE}" \
+        --wait
+    xcrun stapler staple "${dmg_path}"
+fi
+
+shasum -a 256 "${dmg_path}"
+print "Built ${dmg_path}"

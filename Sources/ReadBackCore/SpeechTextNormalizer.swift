@@ -1,7 +1,7 @@
 import Foundation
 
-enum SpeechTextNormalizer {
-    static func normalize(_ text: String) -> String {
+public enum SpeechTextNormalizer {
+    public static func normalize(_ text: String) -> String {
         let blockText = removeBlockFormatting(from: text)
         let options = AttributedString.MarkdownParsingOptions(
             interpretedSyntax: .inlineOnlyPreservingWhitespace

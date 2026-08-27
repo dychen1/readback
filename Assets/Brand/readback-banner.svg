@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">ReadBack</title>
+  <desc id="desc">A faceted paper bird speaks a coral sound pulse beside the ReadBack wordmark.</desc>
+
+  <rect width="1280" height="640" fill="#e9f0f6"/>
+
+  <!-- The approved Paper Bird, centered above the wordmark. -->
+  <g transform="translate(336,30) scale(0.58)">
+    <polygon points="96,596 338,476 338,616" fill="#93aede"/>
+    <polygon points="96,596 338,616 300,680" fill="#3d55b8"/>
+    <polygon points="338,476 338,616 300,680 556,736" fill="#3d55b8"/>
+    <polygon points="556,736 338,476 600,476" fill="#232e6e"/>
+    <polygon points="556,736 600,476 782,586" fill="#fbfdff"/>
+    <polygon points="430,476 676,176 620,476" fill="#232e6e"/>
+    <polygon points="676,176 620,476 700,420" fill="#3d55b8"/>
+    <polygon points="600,476 782,586 770,420" fill="#3d55b8"/>
+    <polygon points="770,420 782,586 872,470 846,408" fill="#232e6e"/>
+    <polygon points="872,470 846,408 952,420" fill="#ef6a4e"/>
+    <polygon points="872,470 952,452 886,496" fill="#ef6a4e"/>
+    <circle cx="836" cy="446" r="13" fill="#e9f0f6"/>
+  </g>
+
+  <!-- A single faceted signal gives the still bird a clear speaking action. -->
+  <g aria-hidden="true">
+    <polygon points="884,292 898,280 912,292 898,304" fill="#ef6a4e"/>
+    <polygon points="916,282 932,264 948,282 932,300" fill="#ef6a4e"/>
+    <polygon points="952,292 966,280 980,292 966,304" fill="#ef6a4e"/>
+  </g>
+
+  <text x="640" y="574" text-anchor="middle" font-family="'Avenir Next', Avenir, 'Helvetica Neue', sans-serif" font-size="96" font-weight="650" letter-spacing="-2.5" fill="#232e6e">ReadBack</text>
+</svg>

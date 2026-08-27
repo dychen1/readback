@@ -10,8 +10,6 @@ func configurationTests() -> [TestCase] {
 
             try expectEqual(config.publicHost, "127.0.0.1", "public host")
             try expectEqual(config.publicPort, 51_280, "public port")
-            try expectEqual(config.backendHost, "127.0.0.1", "backend host")
-            try expectEqual(config.backendPort, 51_281, "backend port")
             try expectEqual(config.model.id, "kokoro", "model ID")
             try expectEqual(
                 config.model.repository,

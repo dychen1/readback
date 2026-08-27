@@ -11,6 +11,16 @@ private actor APIAudioPlayer: AudioPlaying {
     func resume() async {}
 }
 
+private actor APITestRuntime: SpeechModelRuntime {
+    private var prepared = false
+
+    func prepare() async throws { prepared = true }
+    func isPrepared() async -> Bool { prepared }
+    func synthesize(_ request: SpeechRequest) async throws -> AudioClip {
+        AudioClip(data: Data(), format: request.format)
+    }
+}
+
 func readBackAPITests() -> [TestCase] {
     [
         TestCase(name: "models endpoint reports the pinned local install") {
@@ -30,16 +40,15 @@ func readBackAPITests() -> [TestCase] {
             }
 
             let configuration = AppConfiguration.default(modelDirectory: root)
-            let backend = MLXBackendClient(url: URL(string: "http://127.0.0.1:1")!)
+            let runtime = APITestRuntime()
             let coordinator = SpeechCoordinator(
-                synthesizer: backend,
-                player: APIAudioPlayer(),
-                modelPath: model
+                synthesizer: runtime,
+                player: APIAudioPlayer()
             )
             let api = ReadBackAPI(
                 configuration: configuration,
                 modelStore: ModelStore(rootURL: root, supportedModels: [.kokoro]),
-                backend: backend,
+                runtime: runtime,
                 coordinator: coordinator
             )
             let app = Application(responder: api.makeRouter().buildResponder())
@@ -55,10 +64,4 @@ func readBackAPITests() -> [TestCase] {
             }
         },
     ]
-}
-
-private extension MLXBackendClient {
-    convenience init(url: URL) {
-        self.init(baseURL: url)
-    }
 }

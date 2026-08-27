@@ -88,5 +88,10 @@ public struct AudioClip: Equatable, Sendable {
 }
 
 public protocol SpeechSynthesizing: Sendable {
-    func synthesize(_ request: SpeechRequest, modelPath: URL) async throws -> AudioClip
+    func synthesize(_ request: SpeechRequest) async throws -> AudioClip
+}
+
+public protocol SpeechModelRuntime: SpeechSynthesizing {
+    func prepare() async throws
+    func isPrepared() async -> Bool
 }

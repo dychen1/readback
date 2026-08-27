@@ -27,7 +27,6 @@ public actor SpeechCoordinator {
 
     private let synthesizer: any SpeechSynthesizing
     private let player: any AudioPlaying
-    private let modelPath: URL
     private let maximumPendingCharacters: Int
 
     private var sessionID: String?
@@ -47,13 +46,11 @@ public actor SpeechCoordinator {
     public init(
         synthesizer: any SpeechSynthesizing,
         player: any AudioPlaying,
-        modelPath: URL,
         maximumPendingCharacters: Int = 2_000
     ) {
         precondition(maximumPendingCharacters > 0)
         self.synthesizer = synthesizer
         self.player = player
-        self.modelPath = modelPath
         self.maximumPendingCharacters = maximumPendingCharacters
     }
 
@@ -244,8 +241,7 @@ public actor SpeechCoordinator {
                         languageCode: segment.languageCode,
                         speed: segment.speed,
                         format: .wav
-                    ),
-                    modelPath: modelPath
+                    )
                 )
                 try Task.checkCancellation()
                 await waitUntilResumed()

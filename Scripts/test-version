@@ -1,0 +1,47 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+script_dir="${0:A:h}"
+project_dir="${script_dir:h}"
+fixture_dir="$(mktemp -d)"
+
+trap 'rm -rf "${fixture_dir}"' EXIT
+
+mkdir -p "${fixture_dir}/Scripts"
+cp "${project_dir}/Scripts/version" "${fixture_dir}/Scripts/version"
+chmod +x "${fixture_dir}/Scripts/version"
+
+fail() {
+    print -u2 "FAIL: $1"
+    exit 1
+}
+
+expect_output() {
+    local expected="$1"
+    shift
+    local actual
+    actual="$($@)" || fail "command failed: $*"
+    [[ "${actual}" == "${expected}" ]] || fail "expected '${expected}', got '${actual}'"
+}
+
+print -r -- "0.2.0" > "${fixture_dir}/VERSION"
+expect_output "0.2.0" "${fixture_dir}/Scripts/version" current
+
+expect_output "0.2.1" "${fixture_dir}/Scripts/version" bump patch
+expect_output "0.3.0" "${fixture_dir}/Scripts/version" bump minor
+expect_output "1.0.0" "${fixture_dir}/Scripts/version" bump major
+expect_output "42" env READBACK_BUILD_NUMBER=42 "${fixture_dir}/Scripts/version" build-number
+
+"${fixture_dir}/Scripts/version" verify-tag v1.0.0 > /dev/null \
+    || fail "matching release tag was rejected"
+if "${fixture_dir}/Scripts/version" verify-tag v1.0.1 > /dev/null 2>&1; then
+    fail "mismatched release tag was accepted"
+fi
+
+print -r -- "1.0" > "${fixture_dir}/VERSION"
+if "${fixture_dir}/Scripts/version" current > /dev/null 2>&1; then
+    fail "invalid SemVer was accepted"
+fi
+
+print "PASS version commands"

@@ -4,13 +4,11 @@ public struct RuntimePaths: Equatable, Sendable {
     public let supportDirectory: URL
     public let modelsDirectory: URL
     public let configurationFile: URL
-    public let backendLog: URL
 
     public init(supportDirectory: URL, modelsDirectory: URL) {
         self.supportDirectory = supportDirectory.standardizedFileURL
         self.modelsDirectory = modelsDirectory.standardizedFileURL
         self.configurationFile = supportDirectory.appendingPathComponent("config.json")
-        self.backendLog = supportDirectory.appendingPathComponent("backend.log")
     }
 
     public static func resolve(

@@ -1,0 +1,19 @@
+cask "readback" do
+  version "__VERSION__"
+  sha256 "__SHA256__"
+
+  url "https://github.com/dychen1/readback/releases/download/v#{version}/ReadBack-#{version}.dmg"
+  name "ReadBack"
+  desc "Local text-to-speech menu-bar app powered by Kokoro and MLX"
+  homepage "https://github.com/dychen1/readback"
+
+  depends_on arch: :arm64
+  depends_on macos: ">= :sonoma"
+
+  app "ReadBack.app"
+  binary "#{appdir}/ReadBack.app/Contents/MacOS/voicepipe"
+
+  zap trash: [
+    "~/Library/Application Support/ReadBack",
+  ]
+end

@@ -6,14 +6,67 @@ script_dir="${0:A:h}"
 project_dir="${script_dir:h}"
 bundle_dir="${project_dir}/dist/ReadBack.app"
 contents_dir="${bundle_dir}/Contents"
+resources_dir="${contents_dir}/Resources"
+model_source="${project_dir}/models/Kokoro-82M-bf16"
+model_target="${resources_dir}/Models/Kokoro-82M-bf16"
+languages_source="${project_dir}/models/Languages"
+codesign_identity="${READBACK_CODESIGN_IDENTITY:--}"
+mlx_metallib="${project_dir}/models/MLX/0.31.1/mlx.metallib"
+
+"${script_dir}/fetch-release-assets"
+
+required_files=(
+    "${model_source}/config.json"
+    "${model_source}/kokoro-v1_0.safetensors"
+    "${languages_source}/en/us_gold.json"
+    "${languages_source}/en/us_silver.json"
+    "${languages_source}/en/us_bart.safetensors"
+    "${languages_source}/en/us_bart_config.json"
+    "${languages_source}/fr/fr_lexicon.tsv"
+    "${mlx_metallib}"
+)
+bundled_voices=(
+    af_heart
+    af_bella
+    af_nicole
+    bf_emma
+    am_fenrir
+    am_michael
+    ff_siwis
+)
+for voice in "${bundled_voices[@]}"; do
+    required_files+=("${model_source}/voices/${voice}.safetensors")
+done
+for file in "${required_files[@]}"; do
+    if [[ ! -s "${file}" ]]; then
+        print -u2 "Missing release asset: ${file}"
+        exit 1
+    fi
+done
 
 "${script_dir}/swiftw" build -c release --product readback
 "${script_dir}/swiftw" build -c release --product voicepipe
 
+rm -rf "${bundle_dir}"
 mkdir -p "${contents_dir}/MacOS"
+mkdir -p "${resources_dir}/Languages" "${model_target}/voices"
 cp -f "${project_dir}/.build/release/readback" "${contents_dir}/MacOS/readback"
 cp -f "${project_dir}/.build/release/voicepipe" "${contents_dir}/MacOS/voicepipe"
+cp -f "${mlx_metallib}" "${contents_dir}/MacOS/mlx.metallib"
 cp -f "${project_dir}/App/Info.plist" "${contents_dir}/Info.plist"
-codesign --force --deep --sign - "${bundle_dir}"
+"${script_dir}/stamp-info-plist" "${contents_dir}/Info.plist"
+cp -f "${project_dir}/Assets/Brand/Raster/readback-wave-mark-1024.png" "${resources_dir}/ReadBack.png"
+cp -f "${project_dir}/Assets/Brand/Raster/readback-wave-mark-monochrome-36.png" "${resources_dir}/ReadBackMenuBarTemplate.png"
+cp -f "${model_source}/config.json" "${model_source}/kokoro-v1_0.safetensors" "${model_target}/"
+for voice in "${bundled_voices[@]}"; do
+    cp -f "${model_source}/voices/${voice}.safetensors" "${model_target}/voices/"
+done
+cp -R "${languages_source}/en" "${languages_source}/fr" "${resources_dir}/Languages/"
+
+if [[ "${codesign_identity}" == "-" ]]; then
+    codesign --force --deep --sign - "${bundle_dir}"
+else
+    codesign --force --deep --options runtime --timestamp --sign "${codesign_identity}" "${bundle_dir}"
+fi
 
 print "Built ${bundle_dir}"

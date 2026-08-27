@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">ReadBack faceted sound wave mark</title>
+  <rect width="1024" height="1024" fill="#e9f0f6"/>
+
+  <!-- Five angular pulses reuse the Paper Bird fold palette. -->
+  <g>
+    <polygon points="112,438 144,410 240,438 240,586 208,614 112,586" fill="#93aede"/>
+    <polygon points="144,410 240,438 240,586 176,512" fill="#3d55b8"/>
+
+    <polygon points="282,328 314,300 410,328 410,696 378,724 282,696" fill="#3d55b8"/>
+    <polygon points="314,300 410,328 410,696 346,512" fill="#232e6e"/>
+
+    <polygon points="452,218 484,190 580,218 580,806 548,834 452,806" fill="#232e6e"/>
+    <polygon points="484,190 580,218 580,806 516,512" fill="#3d55b8"/>
+    <polygon points="452,218 484,190 516,240" fill="#fbfdff"/>
+
+    <polygon points="622,328 654,300 750,328 750,696 718,724 622,696" fill="#3d55b8"/>
+    <polygon points="622,328 654,300 686,512 622,696" fill="#93aede"/>
+
+    <polygon points="792,438 824,410 920,438 920,586 888,614 792,586" fill="#ef6a4e"/>
+    <polygon points="792,438 824,410 856,512 792,586" fill="#232e6e"/>
+  </g>
+</svg>

@@ -30,13 +30,15 @@ func expectEqual<Value: Equatable>(
 enum ReadBackTestRunner {
     static func main() async {
         let tests = configurationTests()
+            + modelAssetsTests()
+            + modelWorkspaceTests()
+            + wavEncoderTests()
+            + inferenceSmokeTests()
             + voiceCatalogTests()
             + audioPlayerTests()
             + modelStoreTests()
             + streamChunkerTests()
             + streamProtocolTests()
-            + backendCommandTests()
-            + mlxBackendClientTests()
             + speechCoordinatorTests()
             + voicePipeTests()
             + voicePipeTextSpeakerTests()
@@ -46,9 +48,18 @@ enum ReadBackTestRunner {
             + readBackAPITests()
             + readBackWebSocketTests()
             + runtimePathsTests()
+            + singleInstanceLockTests()
+        let filter = ProcessInfo.processInfo.environment["READBACK_TEST_FILTER"]
+        let selectedTests = filter.map { needle in
+            tests.filter { $0.name.localizedCaseInsensitiveContains(needle) }
+        } ?? tests
+        let exclude = ProcessInfo.processInfo.environment["READBACK_TEST_EXCLUDE"]
+        let runnableTests = exclude.map { needle in
+            selectedTests.filter { !$0.name.localizedCaseInsensitiveContains(needle) }
+        } ?? selectedTests
         var failures = 0
 
-        for test in tests {
+        for test in runnableTests {
             do {
                 try await test.body()
                 print("PASS \(test.name)")
@@ -58,7 +69,7 @@ enum ReadBackTestRunner {
             }
         }
 
-        print("\(tests.count - failures) passed, \(failures) failed")
+        print("\(runnableTests.count - failures) passed, \(failures) failed")
         if failures > 0 {
             Foundation.exit(1)
         }
