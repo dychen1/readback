@@ -317,7 +317,8 @@ public actor SpeechCoordinator {
             await waitUntilResumed()
             try Task.checkCancellation()
             let slice = min(remainingMilliseconds, 10)
-            try await Task.sleep(for: .milliseconds(slice))
+            let clock = ContinuousClock()
+            try await clock.sleep(until: clock.now.advanced(by: .milliseconds(slice)))
             if !playbackPaused {
                 remainingMilliseconds -= slice
             }

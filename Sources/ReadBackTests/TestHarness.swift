@@ -26,6 +26,11 @@ func expectEqual<Value: Equatable>(
     }
 }
 
+func wait(for duration: Duration) async throws {
+    let clock = ContinuousClock()
+    try await clock.sleep(until: clock.now.advanced(by: duration))
+}
+
 @main
 enum ReadBackTestRunner {
     static func main() async {

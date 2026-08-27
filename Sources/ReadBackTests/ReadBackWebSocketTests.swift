@@ -20,7 +20,7 @@ private actor CancelAwareAudioPlayer: AudioPlaying {
     private var resumes = 0
 
     func play(_ clip: AudioClip) async throws {
-        try await Task.sleep(for: .milliseconds(500))
+        try await wait(for: .milliseconds(500))
     }
 
     func stop() async {

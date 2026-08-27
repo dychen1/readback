@@ -139,6 +139,55 @@ func voicePipeTests() -> [TestCase] {
             let closedAfterAcknowledgment = await socket.isClosed()
             try expect(closedAfterAcknowledgment, "socket should close after session finished")
         },
+        TestCase(name: "voicepipe finish safely clears a pending idle commit") {
+            let socket = ControlledVoicePipeSocket()
+            try await socket.enqueue(
+                ReadBackServerEvent(type: .sessionReady, sessionID: "session-finish")
+            )
+            let client = VoicePipeClient(socket: socket, idleDelay: .seconds(30))
+            try await client.connect()
+            try await client.append("test, hello world")
+
+            let appendEvent = await socket.nextSentEvent()
+            try expectEqual(
+                appendEvent,
+                .textAppend("test, hello world"),
+                "preview text event"
+            )
+
+            let finish = Task { try await client.finish() }
+            let doneEvent = await socket.nextSentEvent()
+            try expectEqual(doneEvent, .inputDone, "input done event")
+            try await socket.enqueue(
+                ReadBackServerEvent(type: .sessionFinished, sessionID: "session-finish")
+            )
+
+            try await finish.value
+            let closed = await socket.isClosed()
+            try expect(closed, "socket should close after a voice preview finishes")
+        },
+        TestCase(name: "voicepipe idle commit completes safely in a release build") {
+            let socket = ControlledVoicePipeSocket()
+            try await socket.enqueue(
+                ReadBackServerEvent(type: .sessionReady, sessionID: "session-idle")
+            )
+            let client = VoicePipeClient(socket: socket, idleDelay: .milliseconds(1))
+            try await client.connect()
+            try await client.append("streamed text")
+
+            let appendEvent = await socket.nextSentEvent()
+            try expectEqual(appendEvent, .textAppend("streamed text"), "streamed text event")
+            let commitEvent = await socket.nextSentEvent()
+            try expectEqual(commitEvent, .inputCommit, "idle commit event")
+
+            let cancellation = Task { await client.cancel() }
+            let cancelEvent = await socket.nextSentEvent()
+            try expectEqual(cancelEvent, .playbackCancel, "cancel event")
+            try await socket.enqueue(
+                ReadBackServerEvent(type: .sessionFinished, sessionID: "session-idle")
+            )
+            await cancellation.value
+        },
         TestCase(name: "voicepipe pause and resume wait for server acknowledgements") {
             let socket = ControlledVoicePipeSocket()
             try await socket.enqueue(
@@ -191,10 +240,10 @@ func voicePipeTests() -> [TestCase] {
             let event = await socket.nextSentEvent()
             try expectEqual(event, .playbackPause, "pause event")
             await socket.failReceive()
-            try await Task.sleep(for: .milliseconds(20))
+            try await wait(for: .milliseconds(20))
             await socket.releaseSend()
 
-            try await Task.sleep(for: .milliseconds(100))
+            try await wait(for: .milliseconds(100))
             let completed = await completion.value()
             try expectEqual(completed, true, "pause should fail instead of waiting forever")
         },

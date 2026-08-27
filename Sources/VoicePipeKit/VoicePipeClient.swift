@@ -106,7 +106,8 @@ public actor VoicePipeClient {
         try await send(.textAppend(text))
         idleCommit?.cancel()
         idleCommit = Task { [weak self, idleDelay] in
-            try? await Task.sleep(for: idleDelay)
+            let clock = ContinuousClock()
+            try? await clock.sleep(until: clock.now.advanced(by: idleDelay))
             guard !Task.isCancelled else { return }
             try? await self?.send(.inputCommit)
         }

@@ -776,7 +776,8 @@ final class ServiceController: ObservableObject {
             {
                 return
             }
-            try await Task.sleep(for: .milliseconds(100))
+            let clock = ContinuousClock()
+            try await clock.sleep(until: clock.now.advanced(by: .milliseconds(100)))
         }
         throw ServiceControllerError.publicServiceDidNotStart
     }

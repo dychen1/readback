@@ -9,7 +9,7 @@
     <key>CFBundleIdentifier</key>
     <string>ai.sanrin.readback</string>
     <key>CFBundleIconFile</key>
-	<string>ReadBack.png</string>
+	<string>ReadBack.icns</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>

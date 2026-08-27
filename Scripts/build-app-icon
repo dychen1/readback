@@ -1,0 +1,50 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+if (( $# != 2 )); then
+    print -u2 "usage: Scripts/build-app-icon <source-1024.png> <output.icns>"
+    exit 64
+fi
+
+source_png="$1"
+output_icns="$2"
+temporary_dir="$(mktemp -d "${TMPDIR:-/tmp}/readback-icon.XXXXXX")"
+combined_tiff="${temporary_dir}/ReadBack.tiff"
+
+cleanup() {
+    rm -rf "${temporary_dir}"
+}
+trap cleanup EXIT
+
+mkdir -p "${output_icns:h}"
+
+render_icon() {
+    local pixels="$1"
+    sips -z "${pixels}" "${pixels}" -s format tiff "${source_png}" \
+        --out "${temporary_dir}/icon-${pixels}.tiff" >/dev/null
+}
+
+render_icon 16
+render_icon 32
+render_icon 48
+render_icon 128
+render_icon 256
+render_icon 512
+render_icon 1024
+
+if ! tiffutil -cat \
+        "${temporary_dir}/icon-16.tiff" \
+        "${temporary_dir}/icon-32.tiff" \
+        "${temporary_dir}/icon-48.tiff" \
+        "${temporary_dir}/icon-128.tiff" \
+        "${temporary_dir}/icon-256.tiff" \
+        "${temporary_dir}/icon-512.tiff" \
+        "${temporary_dir}/icon-1024.tiff" \
+        -out "${combined_tiff}" \
+        >"${temporary_dir}/tiffutil.log" 2>&1
+then
+    cat "${temporary_dir}/tiffutil.log" >&2
+    exit 1
+fi
+tiff2icns "${combined_tiff}" "${output_icns}"

@@ -125,7 +125,7 @@ func voicePipeTextSpeakerTests() -> [TestCase] {
 
             let speech = Task {
                 do {
-                    try await Task.sleep(for: .seconds(10))
+                    try await wait(for: .seconds(10))
                 } catch {
                 }
                 try await speaker.speak("cancelled", requestID: requestID) {}

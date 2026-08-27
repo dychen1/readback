@@ -207,10 +207,10 @@ func speechCoordinatorTests() -> [TestCase] {
             )
             await coordinator.finishInput()
             await player.waitForFirstPlay()
-            try await Task.sleep(for: .milliseconds(20))
+            try await wait(for: .milliseconds(20))
 
             await coordinator.pause()
-            try await Task.sleep(for: .milliseconds(120))
+            try await wait(for: .milliseconds(120))
             let pausedPlayCount = await player.playCount()
             try expectEqual(pausedPlayCount, 1, "paused paragraph gap play count")
 

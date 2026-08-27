@@ -251,7 +251,8 @@ public final class ReadBackAPI: @unchecked Sendable {
                     nextPause = segment.endsParagraph ? settings.paragraphPause : 0
                     break
                 } catch SpeechCoordinatorError.queueLimitExceeded {
-                    try await Task.sleep(for: .milliseconds(25))
+                    let clock = ContinuousClock()
+                    try await clock.sleep(until: clock.now.advanced(by: .milliseconds(25)))
                 }
             }
         }

@@ -18,13 +18,10 @@ let package = Package(
         .executable(name: "readback-tests", targets: ["ReadBackTests"]),
     ],
     dependencies: [
+        .package(path: "Vendor/hummingbird-websocket"),
         .package(
             url: "https://github.com/hummingbird-project/hummingbird.git",
             exact: "2.26.0"
-        ),
-        .package(
-            url: "https://github.com/hummingbird-project/hummingbird-websocket.git",
-            exact: "2.7.0"
         ),
         .package(
             url: "https://github.com/Blaizzy/mlx-audio-swift.git",
