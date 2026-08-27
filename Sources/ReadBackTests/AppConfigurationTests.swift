@@ -25,7 +25,7 @@ func configurationTests() -> [TestCase] {
             try expectEqual(config.defaultVoice, "af_heart", "default voice")
             try expectEqual(config.defaultSpeed, 1.0, "default speed")
             try expectEqual(config.playbackRate, 1.0, "default playback rate")
-            try expectEqual(config.paragraphPause, 0.15, "default paragraph pause")
+            try expectEqual(config.paragraphPause, 0.05, "default paragraph pause")
         },
         TestCase(name: "configuration survives JSON round trip") {
             let original = AppConfiguration.default(
@@ -60,7 +60,7 @@ func configurationTests() -> [TestCase] {
 
             let decoded = try JSONDecoder().decode(AppConfiguration.self, from: legacyData)
 
-            try expectEqual(decoded.paragraphPause, 0.15, "legacy paragraph pause")
+            try expectEqual(decoded.paragraphPause, 0.05, "legacy paragraph pause")
         },
         TestCase(name: "configuration store persists a changed playback rate") {
             let directory = FileManager.default.temporaryDirectory
@@ -101,7 +101,7 @@ func configurationTests() -> [TestCase] {
                 modelDirectory: directory.appendingPathComponent("models")
             )
             configuration.setDefaultVoice("bf_emma")
-            configuration.setParagraphPause(1.5)
+            configuration.setParagraphPause(0.2)
             let store = AppConfigurationStore()
 
             try store.save(configuration, at: file)
@@ -111,31 +111,36 @@ func configurationTests() -> [TestCase] {
             )
 
             try expectEqual(loaded.defaultVoice, "bf_emma", "persisted voice")
-            try expectEqual(loaded.paragraphPause, 1.5, "persisted paragraph pause")
+            try expectEqual(loaded.paragraphPause, 0.2, "persisted paragraph pause")
         },
         TestCase(name: "speech settings use the selected voice language and pause") {
             var configuration = AppConfiguration.default(
                 modelDirectory: URL(fileURLWithPath: "/tmp/models")
             )
             configuration.setDefaultVoice("bf_emma")
-            configuration.setParagraphPause(0.75)
+            configuration.setParagraphPause(0.225)
 
             let settings = SpeechSettings(configuration: configuration)
 
             try expectEqual(settings.voice, "bf_emma", "speech settings voice")
             try expectEqual(settings.languageCode, "b", "speech settings language")
-            try expectEqual(settings.paragraphPause, 0.75, "speech settings paragraph pause")
+            try expectEqual(settings.paragraphPause, 0.225, "speech settings paragraph pause")
         },
-        TestCase(name: "paragraph pause snaps saved values to 50 milliseconds") {
+        TestCase(name: "paragraph pause snaps saved values to 25 milliseconds") {
             var configuration = AppConfiguration.default(
                 modelDirectory: URL(fileURLWithPath: "/tmp/models")
             )
 
-            configuration.setParagraphPause(0.126)
-            try expectEqual(configuration.paragraphPause, 0.15, "rounded paragraph pause")
+            configuration.setParagraphPause(0.137)
+            try expectEqual(configuration.paragraphPause, 0.125, "rounded paragraph pause")
+        },
+        TestCase(name: "paragraph pause caps saved values at 250 milliseconds") {
+            var configuration = AppConfiguration.default(
+                modelDirectory: URL(fileURLWithPath: "/tmp/models")
+            )
 
             configuration.setParagraphPause(2.1)
-            try expectEqual(configuration.paragraphPause, 2.0, "maximum paragraph pause")
+            try expectEqual(configuration.paragraphPause, 0.25, "maximum paragraph pause")
         },
         TestCase(name: "configuration store migrates a missing model root to the current default") {
             let directory = FileManager.default.temporaryDirectory
