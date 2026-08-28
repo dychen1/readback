@@ -8,13 +8,17 @@ struct ModelManagerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Voice Models")
+                Text("Settings")
                     .font(.title2.bold())
-                Text("ReadBack keeps one model active. Local API calls always use it.")
+                Text("Manage agent read-back and voice models.")
                     .foregroundStyle(.secondary)
             }
 
             List {
+                Section("Agent Read-Back") {
+                    ReadBackSkillSettingsView(controller: controller)
+                }
+
                 Section("Installed") {
                     ForEach(controller.installedModels) { model in
                         modelRow(model)
