@@ -1,0 +1,4 @@
+interface:
+  display_name: "ReadBack"
+  short_description: "Hear the latest agent answer naturally"
+  default_prompt: "Use $readback to adapt and speak the latest visible agent answer."

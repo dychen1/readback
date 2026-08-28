@@ -12,8 +12,10 @@ let package = Package(
         .library(name: "ReadBackService", targets: ["ReadBackService"]),
         .library(name: "ReadBackMac", targets: ["ReadBackMac"]),
         .library(name: "ReadBackInference", targets: ["ReadBackInference"]),
+        .library(name: "ReadBackSkill", targets: ["ReadBackSkill"]),
         .library(name: "VoicePipeKit", targets: ["VoicePipeKit"]),
         .executable(name: "readback", targets: ["ReadBackVoice"]),
+        .executable(name: "readback-skill-client", targets: ["ReadBackSkillClientCommand"]),
         .executable(name: "voicepipe", targets: ["voicepipe"]),
         .executable(name: "readback-tests", targets: ["ReadBackTests"]),
     ],
@@ -45,6 +47,7 @@ let package = Package(
                 .product(name: "HummingbirdWebSocket", package: "hummingbird-websocket"),
             ]
         ),
+        .target(name: "ReadBackSkill"),
         .target(name: "VoicePipeKit", dependencies: ["ReadBackCore"]),
         .target(
             name: "ReadBackMac",
@@ -57,7 +60,13 @@ let package = Package(
                 "ReadBackInference",
                 "ReadBackMac",
                 "ReadBackService",
+                "ReadBackSkill",
             ]
+        ),
+        .executableTarget(
+            name: "ReadBackSkillClientCommand",
+            dependencies: ["ReadBackSkill"],
+            path: "Sources/readback-skill-client"
         ),
         .executableTarget(
             name: "voicepipe",
@@ -70,6 +79,7 @@ let package = Package(
                 "ReadBackInference",
                 "ReadBackMac",
                 "ReadBackService",
+                "ReadBackSkill",
                 "VoicePipeKit",
                 .product(name: "HummingbirdTesting", package: "hummingbird"),
                 .product(name: "HummingbirdWSTesting", package: "hummingbird-websocket"),

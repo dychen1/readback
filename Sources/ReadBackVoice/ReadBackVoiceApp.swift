@@ -3,6 +3,7 @@ import ReadBackCore
 import ReadBackInference
 import ReadBackMac
 import ReadBackService
+import ReadBackSkill
 import ServiceManagement
 import SwiftUI
 
@@ -328,6 +329,8 @@ final class ServiceController: ObservableObject {
     @Published private(set) var paragraphPause = ParagraphPause.default
     @Published var selectedVoiceID: String? = "af_heart"
     @Published var installingLanguageID: String?
+    @Published var skillInstallSnapshot = ReadBackSkillInstallSnapshot(state: .unavailable)
+    @Published var isChangingReadBackSkill = false
     @Published var modelSnapshot = ModelManagerSnapshot(
         models: [],
         activeModelID: nil,
@@ -356,6 +359,7 @@ final class ServiceController: ObservableObject {
     private let clipboardSpeaker: VoicePipeTextSpeaker
     private let clipboardAction: ClipboardReadBackAction
     private let speechSettings: SpeechSettingsStore
+    let skillInstaller: ReadBackSkillInstaller
     private var serviceTask: Task<Void, Never>?
     private var clipboardTask: Task<Void, Never>?
     private var clipboardRequestID: UUID?
@@ -370,6 +374,38 @@ final class ServiceController: ObservableObject {
             isDirectory: true
         )
         let resources = Bundle.main.resourceURL ?? paths.supportDirectory
+        let bundledSkillURL = resources.appendingPathComponent(
+            "Skills/readback",
+            isDirectory: true
+        )
+        let developmentSkillURL = URL(
+            fileURLWithPath: FileManager.default.currentDirectoryPath,
+            isDirectory: true
+        ).appendingPathComponent("Skills/readback", isDirectory: true)
+        let skillSourceURL = FileManager.default.fileExists(atPath: bundledSkillURL.path)
+            ? bundledSkillURL
+            : developmentSkillURL
+        let homeURL = FileManager.default.homeDirectoryForCurrentUser
+        let installer = ReadBackSkillInstaller(
+            sourceURL: skillSourceURL,
+            managedURL: paths.supportDirectory.appendingPathComponent(
+                "Skills/readback",
+                isDirectory: true
+            ),
+            hostURLs: [
+                .openAI: homeURL.appendingPathComponent(
+                    ".agents/skills/readback",
+                    isDirectory: true
+                ),
+                .claudeCode: homeURL.appendingPathComponent(
+                    ".claude/skills/readback",
+                    isDirectory: true
+                ),
+            ]
+        )
+        skillInstaller = installer
+        skillInstallSnapshot = (try? installer.snapshot())
+            ?? ReadBackSkillInstallSnapshot(state: .unavailable)
         let assets = ModelAssetLocations.resolve(
             bundleResourcesURL: resources,
             supportDirectory: paths.supportDirectory,

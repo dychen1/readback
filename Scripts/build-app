@@ -8,6 +8,7 @@ assets_root="${READBACK_RELEASE_ASSETS_DIR:-${project_dir}/models}"
 bundle_dir="${project_dir}/dist/ReadBack.app"
 contents_dir="${bundle_dir}/Contents"
 resources_dir="${contents_dir}/Resources"
+skill_target="${resources_dir}/Skills/readback"
 model_source="${assets_root}/Kokoro-82M-bf16"
 model_target="${resources_dir}/Models/Kokoro-82M-bf16"
 languages_source="${assets_root}/Languages"
@@ -46,11 +47,13 @@ for file in "${required_files[@]}"; do
 done
 
 "${script_dir}/swiftw" build -c release --product readback
+"${script_dir}/swiftw" build -c release --product readback-skill-client
 "${script_dir}/swiftw" build -c release --product voicepipe
 
 rm -rf "${bundle_dir}"
 mkdir -p "${contents_dir}/MacOS"
 mkdir -p "${resources_dir}/Languages" "${model_target}/voices"
+mkdir -p "${resources_dir}/Skills"
 cp -f "${project_dir}/.build/release/readback" "${contents_dir}/MacOS/readback"
 cp -f "${project_dir}/.build/release/voicepipe" "${contents_dir}/MacOS/voicepipe"
 cp -f "${mlx_metallib}" "${contents_dir}/MacOS/mlx.metallib"
@@ -61,6 +64,10 @@ cp -f "${project_dir}/App/Info.plist" "${contents_dir}/Info.plist"
     "${resources_dir}/ReadBack.icns"
 cp -f "${project_dir}/Assets/readback-wave-mark-monochrome-36.png" "${resources_dir}/ReadBackMenuBarTemplate.png"
 cp -f "${project_dir}/Assets/readback-wave-mark-32.png" "${resources_dir}/ReadBack.png"
+cp -R "${project_dir}/Skills/readback" "${resources_dir}/Skills/"
+mkdir -p "${skill_target}/scripts"
+cp -f "${project_dir}/.build/release/readback-skill-client" "${skill_target}/scripts/readback-skill-client"
+chmod 755 "${skill_target}/scripts/readback-skill-client"
 cp -f "${model_source}/config.json" "${model_source}/kokoro-v1_0.safetensors" "${model_target}/"
 for voice in "${bundled_voices[@]}"; do
     cp -f "${model_source}/voices/${voice}.safetensors" "${model_target}/voices/"
