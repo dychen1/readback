@@ -13,6 +13,8 @@ public struct ModelID: RawRepresentable, Codable, Hashable, Sendable, CustomStri
     public static let qwen3CustomVoice06B8Bit = ModelID(
         rawValue: "qwen3-custom-voice-0.6b-8bit"
     )
+    public static let chatterboxTurbo8Bit = ModelID(rawValue: "chatterbox-turbo-8bit")
+    public static let chatterboxTurboFP16 = ModelID(rawValue: "chatterbox-turbo-fp16")
     public static let local = ModelID(rawValue: "local")
 }
 
@@ -30,6 +32,7 @@ public enum ModelLanguageDistribution: String, Codable, Equatable, Sendable {
 public enum SpeechRuntimeKind: String, Codable, Equatable, Sendable {
     case kokoro
     case qwen3CustomVoice
+    case chatterboxTurbo
 }
 
 public typealias MLXRuntimeProfile = SpeechRuntimeKind
@@ -313,7 +316,14 @@ public struct CuratedModelCatalog: Sendable {
 
     public static let bundled: CuratedModelCatalog = {
         do {
-            return try CuratedModelCatalog(models: [.kokoro, .qwen3CustomVoice06B8Bit])
+            return try CuratedModelCatalog(
+                models: [
+                    .kokoro,
+                    .qwen3CustomVoice06B8Bit,
+                    .chatterboxTurbo8Bit,
+                    .chatterboxTurboFP16,
+                ]
+            )
         } catch {
             preconditionFailure("Invalid bundled model catalog: \(error)")
         }
@@ -507,6 +517,94 @@ public extension CuratedModelDefinition {
         defaultVoiceByLanguage: ["en": "ryan", "fr": "serena"],
         defaultSynthesisSpeed: 1
     )
+
+    static let chatterboxTurbo8Bit = chatterboxTurbo(
+        id: .chatterboxTurbo8Bit,
+        displayName: "Chatterbox Turbo 8-bit",
+        repository: "mlx-community/chatterbox-turbo-8bit",
+        revision: "2f2e21a03863f86a1274d1060dcc188e7cde77e1",
+        assets: ChatterboxTurboDownloadAssets.eightBit
+    )
+
+    static let chatterboxTurboFP16 = chatterboxTurbo(
+        id: .chatterboxTurboFP16,
+        displayName: "Chatterbox Turbo FP16",
+        repository: "mlx-community/chatterbox-turbo-fp16",
+        revision: "b2d0a13aa7cfff0a06d9acb247ae91c8f19a6d75",
+        assets: ChatterboxTurboDownloadAssets.fp16
+    )
+
+    private static func chatterboxTurbo(
+        id: ModelID,
+        displayName: String,
+        repository: String,
+        revision: String,
+        assets: [ModelAssetDefinition]
+    ) -> CuratedModelDefinition {
+        CuratedModelDefinition(
+            id: id,
+            displayName: displayName,
+            repository: repository,
+            revision: revision,
+            distribution: .downloadable,
+            runtimeKind: .chatterboxTurbo,
+            downloadSize: assets.reduce(Int64(0)) { $0 + $1.byteCount },
+            requiredAssets: assets,
+            languages: [
+                ModelLanguageDefinition(
+                    code: "en",
+                    displayName: "English",
+                    runtimeValue: "",
+                    distribution: .includedWithModel,
+                    requiredAssets: []
+                )
+            ],
+            voices: [
+                ModelVoiceDefinition(
+                    id: "default",
+                    displayName: "Chatterbox",
+                    runtimeValue: "",
+                    supportedLanguageCodes: ["en"]
+                )
+            ],
+            defaultSelection: VoiceSelection(languageCode: "en", voiceID: "default"),
+            defaultVoiceByLanguage: ["en": "default"],
+            defaultSynthesisSpeed: 1
+        )
+    }
+}
+
+private enum ChatterboxTurboDownloadAssets {
+    static let eightBit: [ModelAssetDefinition] = [
+        asset("added_tokens.json", 418, "72e4ab6acb0d9309ac3df4b526ae5fd80a2da5bc5ab7bb02d85096a374f69193"),
+        asset("conds.safetensors", 164_884, "df9ad2c54848027d94cf01f9fc0ed22bc5d3165df6e6a85c903c1124b8a78a4a"),
+        asset("config.json", 2_565, "cb2d9e9bcc2db2c3204220b7443b7132df7678a48238551c159715a51c68fa4f"),
+        asset("merges.txt", 456_318, "1ce1664773c50f3e0cc8842619a93edc4624525b728b188a9e0be33b7726adc5"),
+        asset("model.safetensors", 706_233_417, "cbfe447b04d11bb2d877f1305c37945ca109ffcf74a982a533e4baa40f273ba2"),
+        asset("model.safetensors.index.json", 252_012, "12aa0e85bc93c0ab8aa2d9e2a4d8ddd7e9dcf9b7cfcd1a94eb35bb96ccdb1549"),
+        asset("special_tokens_map.json", 470, "92ba8063bf40aa163eadebbfe0de07c2aebe44cf0d4a9e8726580b0781fd2640"),
+        asset("tokenizer_config.json", 3_878, "bca16a2ac1ddbd78b8d6228f0031884cc74b6ea54b967d6f6d2ebae9ccde23e6"),
+        asset("vocab.json", 999_186, "f6bd25a65e4e63ca31360e9fb11c7e4f9a391a78385d640acd814092dd6eee4f"),
+    ]
+
+    static let fp16: [ModelAssetDefinition] = [
+        asset("added_tokens.json", 418, "72e4ab6acb0d9309ac3df4b526ae5fd80a2da5bc5ab7bb02d85096a374f69193"),
+        asset("conds.safetensors", 164_884, "df9ad2c54848027d94cf01f9fc0ed22bc5d3165df6e6a85c903c1124b8a78a4a"),
+        asset("config.json", 2_059, "aacce8af47c9c930636e47da981339fe0d30e08623d19226aa9a43bd3425b736"),
+        asset("merges.txt", 456_318, "1ce1664773c50f3e0cc8842619a93edc4624525b728b188a9e0be33b7726adc5"),
+        asset("model.safetensors", 2_985_990_960, "9f70328a3f6c5257257aea76e9b14c34d8225745d133e4c1e83aa31f3f72a80b"),
+        asset("special_tokens_map.json", 470, "92ba8063bf40aa163eadebbfe0de07c2aebe44cf0d4a9e8726580b0781fd2640"),
+        asset("tokenizer_config.json", 3_878, "bca16a2ac1ddbd78b8d6228f0031884cc74b6ea54b967d6f6d2ebae9ccde23e6"),
+        asset("vocab.json", 999_186, "f6bd25a65e4e63ca31360e9fb11c7e4f9a391a78385d640acd814092dd6eee4f"),
+    ]
+
+    private static func asset(
+        _ path: String,
+        _ size: Int64,
+        _ sha256: String
+    ) -> ModelAssetDefinition {
+        ModelAssetDefinition(relativePath: path, byteCount: size, sha256: sha256)
+    }
 }
 
 private enum Qwen3CustomVoiceDownloadAssets {

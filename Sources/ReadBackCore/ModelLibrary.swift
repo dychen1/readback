@@ -649,13 +649,16 @@ public actor ModelLibrary: ModelLibraryProtocol {
             || (object["istftnet"] != nil && object["plbert"] != nil)
         let qwenMode = (object["tts_model_type"] as? String)?.lowercased()
         let isQwenCustomVoice = modelType == "qwen3_tts" && qwenMode == "custom_voice"
-        guard isKokoro || isQwenCustomVoice else {
+        let isChatterboxTurbo = modelType == "chatterbox_turbo"
+        guard isKokoro || isQwenCustomVoice || isChatterboxTurbo else {
             throw ModelLibraryError.unsupportedLocalModel
         }
         guard containsWeights(in: directory) else {
             throw ModelLibraryError.unsupportedLocalModel
         }
-        return isKokoro ? .kokoro : .qwen3CustomVoice
+        if isKokoro { return .kokoro }
+        if isQwenCustomVoice { return .qwen3CustomVoice }
+        return .chatterboxTurbo
     }
 
     private func containsWeights(in directory: URL) -> Bool {
