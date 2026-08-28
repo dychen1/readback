@@ -46,7 +46,7 @@ public actor KokoroSpeechSynthesizer: SpeechModelRuntime {
             voice: request.voice,
             refAudio: nil,
             refText: nil,
-            language: Self.languageIdentifier(for: request.languageCode)
+            language: request.languageCode.map(Self.languageIdentifier(for:))
         )
         var samples: [Float] = []
         for try await chunk in stream {

@@ -4,16 +4,17 @@ set -euo pipefail
 
 script_dir="${0:A:h}"
 project_dir="${script_dir:h}"
+assets_root="${READBACK_RELEASE_ASSETS_DIR:-${project_dir}/models}"
 bundle_dir="${project_dir}/dist/ReadBack.app"
 contents_dir="${bundle_dir}/Contents"
 resources_dir="${contents_dir}/Resources"
-model_source="${project_dir}/models/Kokoro-82M-bf16"
+model_source="${assets_root}/Kokoro-82M-bf16"
 model_target="${resources_dir}/Models/Kokoro-82M-bf16"
-languages_source="${project_dir}/models/Languages"
+languages_source="${assets_root}/Languages"
 codesign_identity="${READBACK_CODESIGN_IDENTITY:--}"
-mlx_metallib="${project_dir}/models/MLX/0.31.1/mlx.metallib"
+mlx_metallib="${assets_root}/MLX/0.31.1/mlx.metallib"
 
-"${script_dir}/fetch-release-assets"
+READBACK_RELEASE_ASSETS_DIR="${assets_root}" "${script_dir}/fetch-release-assets"
 
 required_files=(
     "${model_source}/config.json"
@@ -59,6 +60,7 @@ cp -f "${project_dir}/App/Info.plist" "${contents_dir}/Info.plist"
     "${project_dir}/Assets/readback-wave-mark-1024.png" \
     "${resources_dir}/ReadBack.icns"
 cp -f "${project_dir}/Assets/readback-wave-mark-monochrome-36.png" "${resources_dir}/ReadBackMenuBarTemplate.png"
+cp -f "${project_dir}/Assets/readback-wave-mark-32.png" "${resources_dir}/ReadBack.png"
 cp -f "${model_source}/config.json" "${model_source}/kokoro-v1_0.safetensors" "${model_target}/"
 for voice in "${bundled_voices[@]}"; do
     cp -f "${model_source}/voices/${voice}.safetensors" "${model_target}/voices/"

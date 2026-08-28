@@ -7,15 +7,15 @@ public enum AudioFormat: String, Codable, Equatable, Sendable {
 
 public struct SpeechRequest: Codable, Equatable, Sendable {
     public let input: String
-    public let voice: String
-    public let languageCode: String
+    public let voice: String?
+    public let languageCode: String?
     public let speed: Double
     public let format: AudioFormat
 
     public init(
         input: String,
-        voice: String,
-        languageCode: String,
+        voice: String?,
+        languageCode: String?,
         speed: Double,
         format: AudioFormat
     ) {
@@ -28,14 +28,14 @@ public struct SpeechRequest: Codable, Equatable, Sendable {
 }
 
 public struct SpeechSettings: Equatable, Sendable {
-    public let voice: String
-    public let languageCode: String
+    public let voice: String?
+    public let languageCode: String?
     public let synthesisSpeed: Double
     public let paragraphPause: Double
 
     public init(
-        voice: String,
-        languageCode: String,
+        voice: String?,
+        languageCode: String?,
         synthesisSpeed: Double,
         paragraphPause: Double
     ) {
@@ -46,12 +46,11 @@ public struct SpeechSettings: Equatable, Sendable {
     }
 
     public init(configuration: AppConfiguration) {
+        let preference = configuration.preferences(for: configuration.activeModelID)
         self.init(
-            voice: configuration.defaultVoice,
-            languageCode: KokoroVoiceCatalog.languageCode(
-                forVoiceID: configuration.defaultVoice
-            ) ?? "a",
-            synthesisSpeed: configuration.defaultSpeed,
+            voice: preference?.voiceID,
+            languageCode: preference?.languageCode,
+            synthesisSpeed: preference?.synthesisSpeed ?? 1,
             paragraphPause: configuration.paragraphPause
         )
     }

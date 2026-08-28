@@ -20,7 +20,7 @@ cp "${project_dir}/Scripts/version" "${fixture_dir}/Scripts/version"
 cp "${project_dir}/Scripts/stamp-info-plist" "${fixture_dir}/Scripts/stamp-info-plist"
 cp "${project_dir}/Scripts/build-cask" "${fixture_dir}/Scripts/build-cask"
 chmod +x "${fixture_dir}/Scripts/"*
-print -r -- "0.2.0" > "${fixture_dir}/VERSION"
+print -r -- "0.3.0" > "${fixture_dir}/VERSION"
 
 READBACK_BUILD_NUMBER=42 \
     "${fixture_dir}/Scripts/stamp-info-plist" "${fixture_dir}/App/Info.plist"
@@ -28,14 +28,19 @@ READBACK_BUILD_NUMBER=42 \
 short_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${fixture_dir}/App/Info.plist")"
 build_number="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${fixture_dir}/App/Info.plist")"
 single_instance="$(/usr/libexec/PlistBuddy -c 'Print :LSMultipleInstancesProhibited' "${fixture_dir}/App/Info.plist")"
-[[ "${short_version}" == "0.2.0" ]] || fail "plist version was ${short_version}"
+[[ "${short_version}" == "0.3.0" ]] || fail "plist version was ${short_version}"
 [[ "${build_number}" == "42" ]] || fail "plist build was ${build_number}"
 [[ "${single_instance}" == "true" ]] || fail "app bundle permits multiple instances"
 
-print -n -- "fixture" > "${fixture_dir}/dist/ReadBack-0.2.0.dmg"
+grep -q \
+    'readback-wave-mark-32.png.*ReadBack.png' \
+    "${project_dir}/Scripts/build-app" \
+    || fail "build does not package the colored popover logo"
+
+print -n -- "fixture" > "${fixture_dir}/dist/ReadBack-0.3.0.dmg"
 "${fixture_dir}/Scripts/build-cask" > /dev/null
 
 generated_version="$(ruby -e 'text = File.read(ARGV[0]); puts text[/version "([^"]+)"/, 1]' "${fixture_dir}/dist/readback.rb")"
-[[ "${generated_version}" == "0.2.0" ]] || fail "Cask version was ${generated_version}"
+[[ "${generated_version}" == "0.3.0" ]] || fail "Cask version was ${generated_version}"
 
 print "PASS packaging version"

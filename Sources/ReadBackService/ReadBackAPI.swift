@@ -5,26 +5,16 @@ import ReadBackCore
 
 public struct HealthResponse: ResponseCodable, Sendable {
     public let status: String
-    public let backend: String
+    public let runtime: String
+    public let activeModel: String?
     public let modelInstalled: Bool
 
     private enum CodingKeys: String, CodingKey {
         case status
-        case backend
+        case runtime
+        case activeModel = "active_model"
         case modelInstalled = "model_installed"
     }
-}
-
-public struct ModelResponse: ResponseCodable, Sendable {
-    public let id: String
-    public let repository: String
-    public let revision: String
-    public let installed: Bool
-    public let loaded: Bool
-}
-
-public struct ModelListResponse: ResponseCodable, Sendable {
-    public let data: [ModelResponse]
 }
 
 public struct ActionResponse: ResponseCodable, Sendable {
@@ -32,7 +22,6 @@ public struct ActionResponse: ResponseCodable, Sendable {
 }
 
 public struct PublicSpeechRequest: Decodable, Sendable {
-    public let model: String?
     public let input: String
     public let voice: String?
     public let responseFormat: AudioFormat?
@@ -40,7 +29,6 @@ public struct PublicSpeechRequest: Decodable, Sendable {
     public let languageCode: String?
 
     private enum CodingKeys: String, CodingKey {
-        case model
         case input
         case voice
         case responseFormat = "response_format"
@@ -49,24 +37,41 @@ public struct PublicSpeechRequest: Decodable, Sendable {
     }
 }
 
+private enum PublicSpeechRequestError: Error {
+    case modelSelectionNotAllowed
+}
+
+private struct ServiceErrorResponse: Encodable {
+    struct Detail: Encodable {
+        let code: String
+        let message: String
+    }
+
+    let error: Detail
+}
+
+private struct StreamSpeechSettings: Sendable {
+    let voice: String?
+    let languageCode: String?
+    let synthesisSpeed: Double
+    let paragraphPause: Double
+}
+
 public final class ReadBackAPI: @unchecked Sendable {
     public let configuration: AppConfiguration
-    private let modelStore: ModelStore
-    private let runtime: any SpeechModelRuntime
+    private let modelManager: any ModelManaging
     private let coordinator: SpeechCoordinator
     private let speechSettings: SpeechSettingsStore
     private let encoder = JSONEncoder()
 
     public init(
         configuration: AppConfiguration,
-        modelStore: ModelStore,
-        runtime: any SpeechModelRuntime,
+        modelManager: any ModelManaging,
         coordinator: SpeechCoordinator,
         speechSettings: SpeechSettingsStore? = nil
     ) {
         self.configuration = configuration
-        self.modelStore = modelStore
-        self.runtime = runtime
+        self.modelManager = modelManager
         self.coordinator = coordinator
         self.speechSettings = speechSettings ?? SpeechSettingsStore(configuration: configuration)
     }
@@ -75,75 +80,72 @@ public final class ReadBackAPI: @unchecked Sendable {
         let router = Router(context: BasicWebSocketRequestContext.self)
 
         router.get("/health") { [self] _, _ -> HealthResponse in
-            let backendState = await runtime.isPrepared() ? "ready" : "loading"
-            let installed = try await modelStore.installedModels().contains {
-                $0.descriptor.id == configuration.model.id
-            }
-            return HealthResponse(status: "ok", backend: backendState, modelInstalled: installed)
-        }
-
-        router.get("/v1/models") { [self] _, _ -> ModelListResponse in
-            let installed = try await modelStore.installedModels().contains {
-                $0.descriptor.id == configuration.model.id
-            }
-            let loaded = await runtime.isPrepared()
-            return ModelListResponse(data: [modelResponse(installed: installed, loaded: loaded)])
-        }
-
-        router.post("/v1/models/:id/load") { [self] _, context -> ActionResponse in
-            let id = context.parameters.get("id") ?? ""
-            try requireSupportedModel(id)
-            try await runtime.prepare()
-            return ActionResponse(ok: true)
-        }
-
-        router.post("/v1/models/:id/download") { [self] _, context -> ActionResponse in
-            let id = context.parameters.get("id") ?? ""
-            try requireSupportedModel(id)
-            try await runtime.prepare()
-            return ActionResponse(ok: true)
-        }
-
-        router.delete("/v1/models/:id") { [self] _, context -> ActionResponse in
-            let id = context.parameters.get("id") ?? ""
-            try requireSupportedModel(id)
-            throw HTTPError(.conflict, message: "The bundled Kokoro model cannot be deleted")
+            let snapshot = await modelManager.snapshot()
+            let runtime = Self.runtimeName(snapshot.runtimeState)
+            let installed = snapshot.activeModelID.flatMap { activeID in
+                snapshot.models.first { $0.id == activeID }
+            }.map { Self.isInstalled($0.storageState) } ?? false
+            return HealthResponse(
+                status: runtime == "ready" ? "ok" : runtime,
+                runtime: runtime,
+                activeModel: snapshot.activeModelID?.rawValue,
+                modelInstalled: installed
+            )
         }
 
         router.post("/v1/audio/speech") { [self] request, context -> Response in
-            let publicRequest = try await request.decode(as: PublicSpeechRequest.self, context: context)
-            let clip = try await synthesize(publicRequest)
-            let contentType = clip.format == .wav ? "audio/wav" : "audio/pcm"
-            return Response(
-                status: .ok,
-                headers: [.contentType: contentType],
-                body: .init(byteBuffer: .init(data: clip.data))
-            )
+            do {
+                let publicRequest = try await decodeSpeechRequest(request, context: context)
+                let defaults = await activeSettings()
+                let clip: AudioClip
+                do {
+                    clip = try await modelManager.synthesize(
+                        SpeechRequest(
+                            input: publicRequest.input,
+                            voice: publicRequest.voice,
+                            languageCode: publicRequest.languageCode,
+                            speed: publicRequest.speed ?? defaults.synthesisSpeed,
+                            format: publicRequest.responseFormat ?? .wav
+                        )
+                    )
+                } catch ModelManagerError.modelNotReady {
+                    throw HTTPError(.serviceUnavailable, message: "The active model is not ready")
+                }
+                let contentType = clip.format == .wav ? "audio/wav" : "audio/pcm"
+                return Response(
+                    status: .ok,
+                    headers: [.contentType: contentType],
+                    body: .init(byteBuffer: .init(data: clip.data))
+                )
+            } catch PublicSpeechRequestError.modelSelectionNotAllowed {
+                return modelSelectionErrorResponse()
+            }
         }
 
-        router.post("/play") { [self] request, context -> ActionResponse in
-            let publicRequest = try await request.decode(as: PublicSpeechRequest.self, context: context)
-            let defaults = await speechSettings.current()
-            let voice = publicRequest.voice ?? defaults.voice
-            let id = UUID().uuidString
-            try await coordinator.startSession(id: id) { _ in }
-            _ = try await coordinator.enqueue(
-                text: publicRequest.input,
-                voice: voice,
-                languageCode: publicRequest.languageCode
-                    ?? KokoroVoiceCatalog.languageCode(forVoiceID: voice)
-                    ?? defaults.languageCode,
-                speed: publicRequest.speed ?? defaults.synthesisSpeed
-            )
-            await coordinator.finishInput()
-            await coordinator.waitUntilFinished(sessionID: id)
-            return ActionResponse(ok: true)
+        router.post("/play") { [self] request, context -> Response in
+            do {
+                let publicRequest = try await decodeSpeechRequest(request, context: context)
+                let defaults = await activeSettings()
+                let id = UUID().uuidString
+                try await coordinator.startSession(id: id) { _ in }
+                _ = try await coordinator.enqueue(
+                    text: publicRequest.input,
+                    voice: publicRequest.voice,
+                    languageCode: publicRequest.languageCode,
+                    speed: publicRequest.speed ?? defaults.synthesisSpeed
+                )
+                await coordinator.finishInput()
+                await coordinator.waitUntilFinished(sessionID: id)
+                return jsonResponse(ActionResponse(ok: true))
+            } catch PublicSpeechRequestError.modelSelectionNotAllowed {
+                return modelSelectionErrorResponse()
+            }
         }
 
         router.ws("/v1/readback/stream") { [self] inbound, outbound, _ in
             let sessionID = UUID().uuidString
             var chunker = StreamingTextChunker()
-            let settings = await speechSettings.current()
+            let settings = await activeSettings()
             var pauseBefore = 0.0
             do {
                 try await coordinator.startSession(id: sessionID) { [encoder] event in
@@ -155,7 +157,10 @@ public final class ReadBackAPI: @unchecked Sendable {
 
                 for try await message in inbound.messages(maxSize: 65_536) {
                     guard case .text(let text) = message else { continue }
-                    let event = try JSONDecoder().decode(ReadBackClientEvent.self, from: Data(text.utf8))
+                    let event = try JSONDecoder().decode(
+                        ReadBackClientEvent.self,
+                        from: Data(text.utf8)
+                    )
                     switch event {
                     case .textAppend(let text):
                         pauseBefore = try await enqueue(
@@ -193,7 +198,9 @@ public final class ReadBackAPI: @unchecked Sendable {
                     sessionID: sessionID,
                     message: String(describing: error)
                 )
-                if let data = try? encoder.encode(event), let text = String(data: data, encoding: .utf8) {
+                if let data = try? encoder.encode(event),
+                   let text = String(data: data, encoding: .utf8)
+                {
                     try? await outbound.write(.text(text))
                 }
             }
@@ -214,27 +221,34 @@ public final class ReadBackAPI: @unchecked Sendable {
         try await app.runService()
     }
 
-    private func synthesize(_ request: PublicSpeechRequest) async throws -> AudioClip {
-        let modelID = request.model ?? configuration.model.id
-        try requireSupportedModel(modelID)
-        let defaults = await speechSettings.current()
-        let voice = request.voice ?? defaults.voice
-        return try await runtime.synthesize(
-            SpeechRequest(
-                input: request.input,
-                voice: voice,
-                languageCode: request.languageCode
-                    ?? KokoroVoiceCatalog.languageCode(forVoiceID: voice)
-                    ?? defaults.languageCode,
-                speed: request.speed ?? defaults.synthesisSpeed,
-                format: request.responseFormat ?? .wav
-            )
+    private func decodeSpeechRequest(
+        _ request: Request,
+        context: BasicWebSocketRequestContext
+    ) async throws -> PublicSpeechRequest {
+        let buffer = try await request.body.collect(upTo: context.maxUploadSize)
+        let data = Data(buffer.readableBytesView)
+        if let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+           object.keys.contains("model")
+        {
+            throw PublicSpeechRequestError.modelSelectionNotAllowed
+        }
+        return try JSONDecoder().decode(PublicSpeechRequest.self, from: data)
+    }
+
+    private func activeSettings() async -> StreamSpeechSettings {
+        let snapshot = await modelManager.snapshot()
+        let playbackSettings = await speechSettings.current()
+        return StreamSpeechSettings(
+            voice: snapshot.activePreferences?.voiceID,
+            languageCode: nil,
+            synthesisSpeed: snapshot.activePreferences?.synthesisSpeed ?? 1,
+            paragraphPause: playbackSettings.paragraphPause
         )
     }
 
     private func enqueue(
         _ segments: [StreamedTextChunk],
-        settings: SpeechSettings,
+        settings: StreamSpeechSettings,
         pauseBefore: Double
     ) async throws -> Double {
         var nextPause = pauseBefore
@@ -259,19 +273,43 @@ public final class ReadBackAPI: @unchecked Sendable {
         return nextPause
     }
 
-    private func requireSupportedModel(_ id: String) throws {
-        guard id == configuration.model.id else {
-            throw HTTPError(.notFound, message: "Unknown model")
+    private func modelSelectionErrorResponse() -> Response {
+        jsonResponse(
+            ServiceErrorResponse(
+                error: .init(
+                    code: "model_selection_not_allowed",
+                    message: "ReadBack uses the model selected in the app."
+                )
+            ),
+            status: .badRequest
+        )
+    }
+
+    private func jsonResponse<Value: Encodable>(
+        _ value: Value,
+        status: HTTPResponse.Status = .ok
+    ) -> Response {
+        let data = (try? encoder.encode(value)) ?? Data()
+        return Response(
+            status: status,
+            headers: [.contentType: "application/json; charset=utf-8"],
+            body: .init(byteBuffer: .init(data: data))
+        )
+    }
+
+    private static func runtimeName(_ state: ModelRuntimeState) -> String {
+        switch state {
+        case .starting: "starting"
+        case .loading, .unloading: "loading"
+        case .ready: "ready"
+        case .failed: "failed"
         }
     }
 
-    private func modelResponse(installed: Bool, loaded: Bool) -> ModelResponse {
-        ModelResponse(
-            id: configuration.model.id,
-            repository: configuration.model.repository,
-            revision: configuration.model.revision,
-            installed: installed,
-            loaded: loaded
-        )
+    private static func isInstalled(_ state: ModelStorageState) -> Bool {
+        switch state {
+        case .bundled, .installed, .localAvailable: true
+        default: false
+        }
     }
 }

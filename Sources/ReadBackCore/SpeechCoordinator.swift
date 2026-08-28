@@ -19,14 +19,15 @@ public actor SpeechCoordinator {
     private struct Segment: Sendable {
         let sequence: Int
         let text: String
-        let voice: String
-        let languageCode: String
+        let voice: String?
+        let languageCode: String?
         let speed: Double
         let pauseBefore: Double
     }
 
     private let synthesizer: any SpeechSynthesizing
     private let player: any AudioPlaying
+    private let activityGate: ReadBackActivityGate?
     private let maximumPendingCharacters: Int
 
     private var sessionID: String?
@@ -46,11 +47,13 @@ public actor SpeechCoordinator {
     public init(
         synthesizer: any SpeechSynthesizing,
         player: any AudioPlaying,
+        activityGate: ReadBackActivityGate? = nil,
         maximumPendingCharacters: Int = 2_000
     ) {
         precondition(maximumPendingCharacters > 0)
         self.synthesizer = synthesizer
         self.player = player
+        self.activityGate = activityGate
         self.maximumPendingCharacters = maximumPendingCharacters
     }
 
@@ -64,6 +67,11 @@ public actor SpeechCoordinator {
 
     public func startSession(id: String, events: @escaping EventSink) async throws {
         guard sessionID == nil else {
+            throw SpeechCoordinatorError.sessionAlreadyActive
+        }
+        do {
+            try await activityGate?.beginSpeech(sessionID: id)
+        } catch {
             throw SpeechCoordinatorError.sessionAlreadyActive
         }
         sessionID = id
@@ -82,8 +90,8 @@ public actor SpeechCoordinator {
     @discardableResult
     public func enqueue(
         text: String,
-        voice: String,
-        languageCode: String = "a",
+        voice: String?,
+        languageCode: String? = nil,
         speed: Double,
         pauseBefore: Double = 0
     ) async throws -> Int {
@@ -163,6 +171,7 @@ public actor SpeechCoordinator {
         sessionID = nil
         eventSink = nil
         isEndingSession = false
+        await activityGate?.endSpeech(sessionID: activeID)
         resumeCompletionWaiters()
     }
 
@@ -294,6 +303,7 @@ public actor SpeechCoordinator {
         sessionID = nil
         eventSink = nil
         isEndingSession = false
+        await activityGate?.endSpeech(sessionID: id)
         resumeCompletionWaiters()
     }
 
