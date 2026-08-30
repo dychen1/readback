@@ -3,13 +3,18 @@ import ReadBackCore
 import ReadBackInference
 
 private actor SmokeProgressReporter {
+    private let label: String
     private var lastReportedPercent = -5
+
+    init(label: String = "Qwen") {
+        self.label = label
+    }
 
     func report(_ progress: Double) {
         let percent = Int(progress * 100)
         guard percent >= lastReportedPercent + 5 else { return }
         lastReportedPercent = percent
-        print("Qwen install: \(percent)%")
+        print("\(label) install: \(percent)%")
     }
 }
 
@@ -93,5 +98,60 @@ func inferenceSmokeTests() -> [TestCase] {
                 "Qwen smoke WAV header"
             )
         },
+        TestCase(name: "curated Chatterbox Turbo 8-bit installs and generates a local WAV") {
+            guard ProcessInfo.processInfo.environment["READBACK_RUN_CHATTERBOX_8BIT_SMOKE"] == "1"
+            else { return }
+            try await runChatterboxSmoke(modelID: .chatterboxTurbo8Bit)
+        },
+        TestCase(name: "curated Chatterbox Turbo FP16 installs and generates a local WAV") {
+            guard ProcessInfo.processInfo.environment["READBACK_RUN_CHATTERBOX_FP16_SMOKE"] == "1"
+            else { return }
+            try await runChatterboxSmoke(modelID: .chatterboxTurboFP16)
+        },
     ]
+}
+
+private func runChatterboxSmoke(modelID: ModelID) async throws {
+    let support = FileManager.default.urls(
+        for: .applicationSupportDirectory,
+        in: .userDomainMask
+    )[0].appendingPathComponent("ReadBack", isDirectory: true)
+    let session = MLXSpeechModelSession()
+    let library = ModelLibrary(
+        catalog: .bundled,
+        paths: ModelLibraryPaths(
+            managedModelsURL: support.appendingPathComponent("Models", isDirectory: true),
+            downloadsURL: support.appendingPathComponent("Downloads", isDirectory: true),
+            localRegistrationURL: support.appendingPathComponent("local-model.json")
+        ),
+        bundledModels: [:],
+        validator: session
+    )
+    if await library.storageState(for: modelID) != .installed {
+        let reporter = SmokeProgressReporter(label: "Chatterbox")
+        try await library.install(modelID) { progress in
+            await reporter.report(progress)
+        }
+    }
+
+    let location = try await library.location(for: modelID)
+    try await session.load(from: location.directoryURL, profile: .chatterboxTurbo)
+    let clip = try await session.synthesize(
+        SpeechRequest(
+            input: "test, hello world",
+            voice: "",
+            languageCode: "",
+            speed: 1,
+            format: .wav
+        )
+    )
+    await session.unload()
+
+    try expectEqual(clip.format, .wav, "Chatterbox smoke audio format")
+    try expect(clip.data.count > 44, "Chatterbox smoke WAV should contain samples")
+    try expectEqual(
+        String(decoding: clip.data.prefix(4), as: UTF8.self),
+        "RIFF",
+        "Chatterbox smoke WAV header"
+    )
 }

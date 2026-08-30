@@ -538,6 +538,8 @@ public actor ModelManager: ModelManaging {
         return switch profile {
         case .qwen3CustomVoice:
             .qwen3CustomVoice06B8Bit
+        case .chatterboxTurbo:
+            .chatterboxTurbo8Bit
         case .kokoro:
             nil
         }

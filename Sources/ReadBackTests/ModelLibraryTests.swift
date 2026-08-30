@@ -354,6 +354,23 @@ func modelLibraryTests() -> [TestCase] {
                 try expectEqual(error, .unsupportedLocalModel, "local error")
             }
         },
+        TestCase(name: "local model detection accepts Chatterbox Turbo") {
+            let fixture = try ModelLibraryFixture(validHash: true)
+            defer { fixture.remove() }
+            let local = fixture.rootURL.appendingPathComponent(
+                "Local Chatterbox Turbo",
+                isDirectory: true
+            )
+            try FileManager.default.createDirectory(at: local, withIntermediateDirectories: true)
+            try Data(#"{"model_type":"chatterbox_turbo"}"#.utf8)
+                .write(to: local.appendingPathComponent("config.json"))
+            try Data([0x01]).write(to: local.appendingPathComponent("model.safetensors"))
+
+            try await fixture.library.registerLocalModel(at: local)
+
+            let profile = try await fixture.library.runtimeProfile(for: .local)
+            try expectEqual(profile, .chatterboxTurbo, "local runtime kind")
+        },
     ]
 }
 

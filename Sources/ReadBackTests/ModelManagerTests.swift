@@ -194,6 +194,20 @@ func modelManagerTests() -> [TestCase] {
             try expectEqual(request?.languageCode, "English", "local Qwen language")
             try expectEqual(local?.languages.map(\.code), ["en", "fr"], "local languages")
         },
+        TestCase(name: "model manager gives local Chatterbox the standard curated controls") {
+            let fixture = try ModelManagerFixture(localRuntime: .chatterboxTurbo)
+            defer { fixture.remove() }
+
+            await fixture.manager.warmConfiguredModel()
+
+            let snapshot = await fixture.manager.snapshot()
+            let request = await fixture.session.lastRequest()
+            let local = snapshot.models.first { $0.id == .local }
+            try expectEqual(snapshot.activeModelID, .local, "active local model")
+            try expectEqual(request?.voice, "", "local Chatterbox voice")
+            try expectEqual(request?.languageCode, "", "local Chatterbox language")
+            try expectEqual(local?.languages.map(\.code), ["en"], "local languages")
+        },
     ]
 }
 

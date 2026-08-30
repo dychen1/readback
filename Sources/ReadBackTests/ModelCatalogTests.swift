@@ -198,5 +198,50 @@ func modelCatalogTests() -> [TestCase] {
             )
             try expectEqual(qwen.defaultVoiceByLanguage["fr"], "serena", "French default")
         },
+        TestCase(name: "catalog exposes both curated Chatterbox Turbo installs") {
+            let catalog = CuratedModelCatalog.bundled
+            let eightBit = try catalog.model(id: .chatterboxTurbo8Bit)
+            let fp16 = try catalog.model(id: .chatterboxTurboFP16)
+
+            try expectEqual(eightBit.displayName, "Chatterbox Turbo 8-bit", "8-bit name")
+            try expectEqual(
+                eightBit.repository,
+                "mlx-community/chatterbox-turbo-8bit",
+                "8-bit repository"
+            )
+            try expectEqual(
+                eightBit.revision,
+                "2f2e21a03863f86a1274d1060dcc188e7cde77e1",
+                "8-bit revision"
+            )
+            try expectEqual(eightBit.downloadSize, 708_113_148, "8-bit download size")
+            try expectEqual(eightBit.requiredAssets.count, 9, "8-bit asset count")
+
+            try expectEqual(fp16.displayName, "Chatterbox Turbo FP16", "FP16 name")
+            try expectEqual(
+                fp16.repository,
+                "mlx-community/chatterbox-turbo-fp16",
+                "FP16 repository"
+            )
+            try expectEqual(
+                fp16.revision,
+                "b2d0a13aa7cfff0a06d9acb247ae91c8f19a6d75",
+                "FP16 revision"
+            )
+            try expectEqual(fp16.downloadSize, 2_987_618_173, "FP16 download size")
+            try expectEqual(fp16.requiredAssets.count, 8, "FP16 asset count")
+
+            for model in [eightBit, fp16] {
+                try expectEqual(model.distribution, .downloadable, "distribution")
+                try expectEqual(model.runtimeKind, .chatterboxTurbo, "runtime kind")
+                try expectEqual(model.languages.map(\.code), ["en"], "languages")
+                try expectEqual(model.voices.map(\.displayName), ["Chatterbox"], "voices")
+                try expectEqual(
+                    model.defaultSelection,
+                    VoiceSelection(languageCode: "en", voiceID: "default"),
+                    "default selection"
+                )
+            }
+        },
     ]
 }

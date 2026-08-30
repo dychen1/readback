@@ -123,6 +123,12 @@ public struct DefaultSpeechRuntimeRegistry: SpeechRuntimeRegistry, @unchecked Se
                 fileManager: fileManager,
                 clearCache: clearCache
             )
+        case .chatterboxTurbo:
+            ChatterboxTurboRuntimeAdapter(
+                loader: loader,
+                fileManager: fileManager,
+                clearCache: clearCache
+            )
         }
     }
 }

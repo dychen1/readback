@@ -141,6 +141,63 @@ func speechRuntimeAdapterTests() -> [TestCase] {
                 )
             }
         },
+        TestCase(name: "runtime adapter registry maps Chatterbox to its default voice") {
+            let generator = RuntimeFixtureGenerator()
+            let registry = DefaultSpeechRuntimeRegistry(
+                loader: RuntimeFixtureLoader(generator: generator),
+                languageResourceRoots: [],
+                clearCache: {}
+            )
+            let adapter = try registry.makeAdapter(for: .chatterboxTurbo)
+            let directory = try runtimeFixtureDirectory(
+                config: #"{"model_type":"chatterbox_turbo"}"#
+            )
+            defer { try? FileManager.default.removeItem(at: directory) }
+
+            try await adapter.validateModel(at: directory)
+            try await adapter.loadModel(at: directory)
+            let stream = try await adapter.synthesize(
+                ResolvedSpeechRequest(
+                    input: "Hello",
+                    selection: VoiceSelection(languageCode: "en", voiceID: "default"),
+                    voiceRuntimeValue: "",
+                    languageRuntimeValue: "",
+                    format: .wav
+                )
+            )
+            var samples: [Float] = []
+            for try await chunk in stream { samples.append(contentsOf: chunk) }
+
+            let request = await generator.request()
+            let runtimeKind = await adapter.kind
+            try expectEqual(runtimeKind, .chatterboxTurbo, "runtime kind")
+            try expectEqual(request.voice, nil, "Chatterbox voice")
+            try expectEqual(request.language, nil, "Chatterbox language")
+            try expectEqual(request.speed, nil, "Chatterbox synthesis speed")
+            try expect(!samples.isEmpty, "Chatterbox should return samples")
+        },
+        TestCase(name: "Chatterbox Turbo adapter rejects regular Chatterbox") {
+            let generator = RuntimeFixtureGenerator()
+            let registry = DefaultSpeechRuntimeRegistry(
+                loader: RuntimeFixtureLoader(generator: generator),
+                languageResourceRoots: [],
+                clearCache: {}
+            )
+            let adapter = try registry.makeAdapter(for: .chatterboxTurbo)
+            let directory = try runtimeFixtureDirectory(config: #"{"model_type":"chatterbox"}"#)
+            defer { try? FileManager.default.removeItem(at: directory) }
+
+            do {
+                try await adapter.validateModel(at: directory)
+                throw TestFailure(description: "regular Chatterbox should be rejected")
+            } catch let error as SpeechRuntimeAdapterError {
+                try expectEqual(
+                    error,
+                    .unsupportedModelConfiguration(.chatterboxTurbo),
+                    "adapter error"
+                )
+            }
+        },
     ]
 }
 
