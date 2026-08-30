@@ -413,7 +413,7 @@ public actor ModelLibrary: ModelLibraryProtocol {
         guard model.distribution != .bundled else {
             throw ModelLibraryError.bundledModelCannotBeRemoved
         }
-        let directory = managedDirectory(for: model)
+        let directory = managedDirectory(for: model).deletingLastPathComponent()
         guard fileManager.fileExists(atPath: directory.path) else { return }
         try fileManager.removeItem(at: directory)
     }
