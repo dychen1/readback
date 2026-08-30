@@ -168,35 +168,59 @@ func modelCatalogTests() -> [TestCase] {
                 )
             }
         },
-        TestCase(name: "catalog pins curated Qwen CustomVoice") {
-            let qwen = try CuratedModelCatalog.bundled.model(id: .qwen3CustomVoice06B8Bit)
+        TestCase(name: "catalog exposes both curated Qwen CustomVoice installs") {
+            let catalog = CuratedModelCatalog.bundled
+            let eightBit = try catalog.model(id: .qwen3CustomVoice06B8Bit)
+            let bf16 = try catalog.model(id: .qwen3CustomVoice06BBF16)
 
-            try expectEqual(qwen.distribution, .downloadable, "distribution")
-            try expectEqual(qwen.runtimeKind, .qwen3CustomVoice, "runtime kind")
+            try expectEqual(eightBit.displayName, "Qwen3 CustomVoice 0.6B 8-bit", "8-bit name")
             try expectEqual(
-                qwen.repository,
+                eightBit.repository,
                 "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit",
-                "repository"
+                "8-bit repository"
             )
             try expectEqual(
-                qwen.revision,
+                eightBit.revision,
                 "4addb03177a4f581502fc279585b190f47728e3f",
-                "revision"
+                "8-bit revision"
             )
-            try expectEqual(qwen.downloadSize, 1_649_421_615, "download size")
-            try expectEqual(qwen.requiredAssets.count, 12, "asset count")
-            try expectEqual(qwen.languages.map(\.code), ["en", "fr"], "languages")
+            try expectEqual(eightBit.downloadSize, 1_649_421_615, "8-bit download size")
+            try expectEqual(eightBit.requiredAssets.count, 12, "8-bit asset count")
+
+            try expectEqual(bf16.displayName, "Qwen3 CustomVoice 0.6B BF16", "BF16 name")
             try expectEqual(
-                qwen.voices.map(\.displayName),
-                ["Ryan", "Aiden", "Serena", "Vivian"],
-                "voices"
+                bf16.repository,
+                "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-bf16",
+                "BF16 repository"
             )
             try expectEqual(
-                qwen.defaultSelection,
-                VoiceSelection(languageCode: "en", voiceID: "ryan"),
-                "model default"
+                bf16.revision,
+                "6415d95f88be018ff9e46813119dc3bc12261328",
+                "BF16 revision"
             )
-            try expectEqual(qwen.defaultVoiceByLanguage["fr"], "serena", "French default")
+            try expectEqual(bf16.downloadSize, 2_498_416_818, "BF16 download size")
+            try expectEqual(bf16.requiredAssets.count, 12, "BF16 asset count")
+
+            for model in [eightBit, bf16] {
+                try expectEqual(model.distribution, .downloadable, "distribution")
+                try expectEqual(model.runtimeKind, .qwen3CustomVoice, "runtime kind")
+                try expectEqual(model.languages.map(\.code), ["en", "fr"], "languages")
+                try expectEqual(
+                    model.voices.map(\.displayName),
+                    ["Ryan", "Aiden", "Serena", "Vivian"],
+                    "voices"
+                )
+                try expectEqual(
+                    model.defaultSelection,
+                    VoiceSelection(languageCode: "en", voiceID: "ryan"),
+                    "model default"
+                )
+                try expectEqual(
+                    model.defaultVoiceByLanguage["fr"],
+                    "serena",
+                    "French default"
+                )
+            }
         },
         TestCase(name: "catalog exposes both curated Chatterbox Turbo installs") {
             let catalog = CuratedModelCatalog.bundled

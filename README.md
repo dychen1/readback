@@ -2,7 +2,24 @@
 
 ## TL;DR
 
-ReadBack is a native macOS menu-bar app that turns copied or streamed text into speech on your Mac. The app includes Kokoro 82M BF16, English, and French, so a new install works offline. Users can install other supported Kokoro languages with one click or register one compatible local MLX model. ReadBack keeps one model active, and every local HTTP, WebSocket, clipboard, and command-line request uses that model.
+ReadBack is a native macOS menu-bar app that turns copied or streamed text into speech on your Mac. The app includes Kokoro 82M BF16, English, and French, so a new install works offline. Users can install curated Qwen3 and Chatterbox models, add other supported Kokoro languages, or register one compatible local MLX model. ReadBack keeps one model active, and every local HTTP, WebSocket, clipboard, and command-line request uses that model.
+
+## Listen
+
+Each sample reads the first two sentences of Herman Melville's [*Moby-Dick*](https://www.gutenberg.org/files/2701/2701-h/2701-h.htm) at 1×:
+
+> Call me Ishmael. Some years ago—never mind how long precisely—having little or no money in my purse, and nothing particular to interest me on shore, I thought I would sail about a little and see the watery part of the world.
+
+| Engine | Voice | Recording |
+| --- | --- | --- |
+| Kokoro 82M BF16 | Heart | [Listen to Kokoro](Demo/kokoro-heart.wav) |
+| Qwen3 CustomVoice 0.6B 8-bit | Ryan | [Listen to Qwen3 8-bit](Demo/qwen3-8bit-ryan.wav) |
+| Qwen3 CustomVoice 0.6B BF16 | Ryan | [Listen to Qwen3 BF16](Demo/qwen3-bf16-ryan.wav) |
+| Chatterbox Turbo 8-bit | Default | [Listen to Chatterbox 8-bit](Demo/chatterbox-turbo-8bit.wav) |
+| Chatterbox Turbo FP16 | Default | [Listen to Chatterbox FP16](Demo/chatterbox-turbo-fp16.wav) |
+| macOS `say` | System default | [Listen to macOS say](Demo/macos-say.wav) |
+
+All six files use mono, 24 kHz, 16-bit PCM WAV. They use each engine's 1× speaking rate with no EQ, noise removal, loudness change, or other sound processing.
 
 ## What it includes
 
@@ -12,6 +29,7 @@ ReadBack is a native macOS menu-bar app that turns copied or streamed text into 
 - A loopback HTTP and WebSocket service on `127.0.0.1:51280`
 - `voicepipe`, a small command that speaks streamed standard input
 - Bundled Kokoro 82M BF16 with six English voices and one French voice
+- One-click Qwen3 CustomVoice 0.6B and Chatterbox Turbo installs in 8-bit and 16-bit forms
 - One-click installs for Japanese, Mandarin Chinese, Spanish, Hindi, Italian, and Brazilian Portuguese
 - One local MLX model slot for technical users
 
@@ -60,7 +78,16 @@ Playback speed can change during active or paused speech without new synthesis. 
 
 ## Models and languages
 
-Kokoro is bundled, active by default, and cannot be removed. English and French work without another download. The Settings window installs other supported language files from pinned revisions and checks each file's size and SHA-256 hash before it publishes the install.
+Kokoro is bundled, active by default, and cannot be removed. English and French work without another download. The Settings window offers these optional model installs:
+
+| Model | Approximate download |
+| --- | ---: |
+| Qwen3 CustomVoice 0.6B 8-bit | 1.65 GB |
+| Qwen3 CustomVoice 0.6B BF16 | 2.50 GB |
+| Chatterbox Turbo 8-bit | 708 MB |
+| Chatterbox Turbo FP16 | 2.99 GB |
+
+Each choice uses the same curated controls for its model family. ReadBack downloads files from a pinned revision, checks each size and SHA-256 hash, publishes only a complete model, and clears its staging folder after a successful install. The Settings window uses the same process for optional Kokoro language files.
 
 ReadBack stores settings per model. Switching back to a model restores its last voice and language. It keeps only one model loaded, then clears the old MLX cache during a switch.
 
@@ -211,7 +238,7 @@ READBACK_RELEASE_ASSETS_DIR=/absolute/path/to/models Scripts/build-app
 
 ## Upstream projects
 
-ReadBack uses [MLX-Audio Swift](https://github.com/Blaizzy/mlx-audio-swift), [Kokoro](https://huggingface.co/mlx-community/Kokoro-82M-bf16), [Hummingbird](https://github.com/hummingbird-project/hummingbird), [Hummingbird WebSocket](https://github.com/hummingbird-project/hummingbird-websocket), and Apple AVFoundation.
+ReadBack uses [MLX-Audio Swift](https://github.com/Blaizzy/mlx-audio-swift), [Kokoro](https://huggingface.co/mlx-community/Kokoro-82M-bf16), [Qwen3-TTS](https://huggingface.co/collections/mlx-community/qwen3-tts), [Chatterbox](https://huggingface.co/mlx-community/chatterbox-turbo-fp16), [Hummingbird](https://github.com/hummingbird-project/hummingbird), [Hummingbird WebSocket](https://github.com/hummingbird-project/hummingbird-websocket), and Apple AVFoundation.
 
 ## License
 
