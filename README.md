@@ -2,7 +2,7 @@
 
 ## TL;DR
 
-ReadBack is a native macOS menu-bar app that turns copied or streamed text into speech on your Mac. The app includes Kokoro 82M BF16, English, and French, so a new install works offline. Users can install curated Qwen3 and Chatterbox models, add other supported Kokoro languages, or register one compatible local MLX model. ReadBack keeps one model active, and every local HTTP, WebSocket, clipboard, and command-line request uses that model.
+ReadBack is a native macOS menu-bar app for reading back copied or streamed text into audio locally on your Mac. The app includes Kokoro 82M BF16, English, and French out the box and fast install options for select Qwen3 and Chatterbox models from HuggingFace. This project also includes support for loading local MLX models. ReadBack keeps one model actively loaded at a time.
 
 ## Listen
 
