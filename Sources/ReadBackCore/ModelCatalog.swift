@@ -13,6 +13,9 @@ public struct ModelID: RawRepresentable, Codable, Hashable, Sendable, CustomStri
     public static let qwen3CustomVoice06B8Bit = ModelID(
         rawValue: "qwen3-custom-voice-0.6b-8bit"
     )
+    public static let qwen3CustomVoice06BBF16 = ModelID(
+        rawValue: "qwen3-custom-voice-0.6b-bf16"
+    )
     public static let chatterboxTurbo8Bit = ModelID(rawValue: "chatterbox-turbo-8bit")
     public static let chatterboxTurboFP16 = ModelID(rawValue: "chatterbox-turbo-fp16")
     public static let local = ModelID(rawValue: "local")
@@ -320,6 +323,7 @@ public struct CuratedModelCatalog: Sendable {
                 models: [
                     .kokoro,
                     .qwen3CustomVoice06B8Bit,
+                    .qwen3CustomVoice06BBF16,
                     .chatterboxTurbo8Bit,
                     .chatterboxTurboFP16,
                 ]
@@ -462,60 +466,20 @@ public extension CuratedModelDefinition {
         )
     }()
 
-    static let qwen3CustomVoice06B8Bit = CuratedModelDefinition(
+    static let qwen3CustomVoice06B8Bit = qwen3CustomVoice(
         id: .qwen3CustomVoice06B8Bit,
-        displayName: "Qwen3 CustomVoice 0.6B",
+        displayName: "Qwen3 CustomVoice 0.6B 8-bit",
         repository: "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit",
         revision: "4addb03177a4f581502fc279585b190f47728e3f",
-        distribution: .downloadable,
-        runtimeKind: .qwen3CustomVoice,
-        downloadSize: Qwen3CustomVoiceDownloadAssets.totalSize,
-        requiredAssets: Qwen3CustomVoiceDownloadAssets.all,
-        languages: [
-            ModelLanguageDefinition(
-                code: "en",
-                displayName: "English",
-                runtimeValue: "English",
-                distribution: .includedWithModel,
-                requiredAssets: []
-            ),
-            ModelLanguageDefinition(
-                code: "fr",
-                displayName: "French",
-                runtimeValue: "French",
-                distribution: .includedWithModel,
-                requiredAssets: []
-            ),
-        ],
-        voices: [
-            ModelVoiceDefinition(
-                id: "ryan",
-                displayName: "Ryan",
-                runtimeValue: "Ryan",
-                supportedLanguageCodes: ["en", "fr"]
-            ),
-            ModelVoiceDefinition(
-                id: "aiden",
-                displayName: "Aiden",
-                runtimeValue: "Aiden",
-                supportedLanguageCodes: ["en", "fr"]
-            ),
-            ModelVoiceDefinition(
-                id: "serena",
-                displayName: "Serena",
-                runtimeValue: "Serena",
-                supportedLanguageCodes: ["en", "fr"]
-            ),
-            ModelVoiceDefinition(
-                id: "vivian",
-                displayName: "Vivian",
-                runtimeValue: "Vivian",
-                supportedLanguageCodes: ["en", "fr"]
-            ),
-        ],
-        defaultSelection: VoiceSelection(languageCode: "en", voiceID: "ryan"),
-        defaultVoiceByLanguage: ["en": "ryan", "fr": "serena"],
-        defaultSynthesisSpeed: 1
+        assets: Qwen3CustomVoiceDownloadAssets.eightBit
+    )
+
+    static let qwen3CustomVoice06BBF16 = qwen3CustomVoice(
+        id: .qwen3CustomVoice06BBF16,
+        displayName: "Qwen3 CustomVoice 0.6B BF16",
+        repository: "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-bf16",
+        revision: "6415d95f88be018ff9e46813119dc3bc12261328",
+        assets: Qwen3CustomVoiceDownloadAssets.bf16
     )
 
     static let chatterboxTurbo8Bit = chatterboxTurbo(
@@ -533,6 +497,70 @@ public extension CuratedModelDefinition {
         revision: "b2d0a13aa7cfff0a06d9acb247ae91c8f19a6d75",
         assets: ChatterboxTurboDownloadAssets.fp16
     )
+
+    private static func qwen3CustomVoice(
+        id: ModelID,
+        displayName: String,
+        repository: String,
+        revision: String,
+        assets: [ModelAssetDefinition]
+    ) -> CuratedModelDefinition {
+        CuratedModelDefinition(
+            id: id,
+            displayName: displayName,
+            repository: repository,
+            revision: revision,
+            distribution: .downloadable,
+            runtimeKind: .qwen3CustomVoice,
+            downloadSize: assets.reduce(Int64(0)) { $0 + $1.byteCount },
+            requiredAssets: assets,
+            languages: [
+                ModelLanguageDefinition(
+                    code: "en",
+                    displayName: "English",
+                    runtimeValue: "English",
+                    distribution: .includedWithModel,
+                    requiredAssets: []
+                ),
+                ModelLanguageDefinition(
+                    code: "fr",
+                    displayName: "French",
+                    runtimeValue: "French",
+                    distribution: .includedWithModel,
+                    requiredAssets: []
+                ),
+            ],
+            voices: [
+                ModelVoiceDefinition(
+                    id: "ryan",
+                    displayName: "Ryan",
+                    runtimeValue: "Ryan",
+                    supportedLanguageCodes: ["en", "fr"]
+                ),
+                ModelVoiceDefinition(
+                    id: "aiden",
+                    displayName: "Aiden",
+                    runtimeValue: "Aiden",
+                    supportedLanguageCodes: ["en", "fr"]
+                ),
+                ModelVoiceDefinition(
+                    id: "serena",
+                    displayName: "Serena",
+                    runtimeValue: "Serena",
+                    supportedLanguageCodes: ["en", "fr"]
+                ),
+                ModelVoiceDefinition(
+                    id: "vivian",
+                    displayName: "Vivian",
+                    runtimeValue: "Vivian",
+                    supportedLanguageCodes: ["en", "fr"]
+                ),
+            ],
+            defaultSelection: VoiceSelection(languageCode: "en", voiceID: "ryan"),
+            defaultVoiceByLanguage: ["en": "ryan", "fr": "serena"],
+            defaultSynthesisSpeed: 1
+        )
+    }
 
     private static func chatterboxTurbo(
         id: ModelID,
@@ -608,7 +636,7 @@ private enum ChatterboxTurboDownloadAssets {
 }
 
 private enum Qwen3CustomVoiceDownloadAssets {
-    static let all: [ModelAssetDefinition] = [
+    static let eightBit: [ModelAssetDefinition] = [
         asset("config.json", 6_058, "2eea3665564268139c3beb8d497fd3c2e4524e9eed5452836cdf1de96ed3cdbd"),
         asset("generation_config.json", 245, "f1b90b4513f3b34c62851049e2492d7b4c5940daf1276f89c82b8ef04127f3aa"),
         asset("merges.txt", 1_671_839, "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3"),
@@ -623,7 +651,20 @@ private enum Qwen3CustomVoiceDownloadAssets {
         asset("vocab.json", 2_776_833, "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"),
     ]
 
-    static let totalSize = all.reduce(Int64(0)) { $0 + $1.byteCount }
+    static let bf16: [ModelAssetDefinition] = [
+        asset("config.json", 5_853, "69c1b78421a5e408b5e91a74a9995213546613ffe2a1d87a00c7743900ead6ee"),
+        asset("generation_config.json", 245, "f1b90b4513f3b34c62851049e2492d7b4c5940daf1276f89c82b8ef04127f3aa"),
+        asset("merges.txt", 1_671_839, "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3"),
+        asset("model.safetensors", 1_811_626_550, "e6eb20e645c5a28ee66bf8434edb5b67a5f151530dab63afe22787d71bcf5382"),
+        asset("model.safetensors.index.json", 32_289, "1b1e10fb201a65a1b24991cf8f6800d785441ad9ca0ad83828d6bf00f6d5e8ec"),
+        asset("preprocessor_config.json", 127, "efdde1022ea9d76928bf7a9cd53139138f5ba2e466e837f08f6105ab1af1c119"),
+        asset("speech_tokenizer/config.json", 2_336, "ee65bb901c876664ab8707c487157aa1a6ee57c65969b28fb5ec9dc211e68167"),
+        asset("speech_tokenizer/configuration.json", 76, "6bc26d64eb5024b4d1dab5a52371958b429256d6c9d59787f1f5294a54e0cebd"),
+        asset("speech_tokenizer/model.safetensors", 682_293_092, "836b7b357f5ea43e889936a3709af68dfe3751881acefe4ecf0dbd30ba571258"),
+        asset("speech_tokenizer/preprocessor_config.json", 234, "fcb3805e597e786d4067706e602f6688524640f8d3396790e2e09b5942fcbdfb"),
+        asset("tokenizer_config.json", 7_344, "dc3c31c3bdaedd5016382bb3cbe07323026775ad51f5a4fb564505992ae4a670"),
+        asset("vocab.json", 2_776_833, "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"),
+    ]
 
     private static func asset(
         _ path: String,
