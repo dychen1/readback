@@ -118,6 +118,24 @@ func modelLibraryTests() -> [TestCase] {
             try expect(!values.isEmpty, "install should report progress")
             try expectEqual(values.last, 1, "install should finish at one")
         },
+        TestCase(name: "removing a managed model removes its model directory") {
+            let fixture = try ModelLibraryFixture(validHash: true)
+            defer { fixture.remove() }
+            let modelDirectory = fixture.managedModelsURL
+                .appendingPathComponent("fixture", isDirectory: true)
+
+            try await fixture.library.install(.fixture)
+            try await fixture.library.remove(.fixture)
+
+            try expect(
+                !FileManager.default.fileExists(atPath: modelDirectory.path),
+                "removal must not leave the model ID directory"
+            )
+            try expect(
+                FileManager.default.fileExists(atPath: fixture.managedModelsURL.path),
+                "removal must keep the managed models root"
+            )
+        },
         TestCase(name: "model library keeps a retry journal after network interruption") {
             let fixture = try ModelLibraryFixture(
                 validHash: true,
