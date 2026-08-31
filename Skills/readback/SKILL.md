@@ -43,7 +43,7 @@ $HOME/Library/Application Support/ReadBack/Skills/readback/scripts/readback-skil
 
 Pass no arguments. Do not send the original answer. Do not use a temporary file, clipboard, environment variable, model option, voice option, speed option, or endpoint option.
 
-Use the host's interactive standard-input channel when available. Otherwise, use a quoted here-document with a fresh delimiter that does not occur in the brief. Quoting the delimiter must prevent shell expansion. The here-document contains only the adapted brief.
+Use the host's interactive standard-input channel. If the host has no interactive standard-input channel available for a subprocess, state that read-back is unavailable in this host and stop. Do not compose a shell command string containing the brief — a here-document or quoted argument can be broken out of by content in the brief that happens to match its delimiter or quoting.
 
 After the client exits, reply only with “Read-back complete.” On failure, give the shortest actionable fix without repeating the brief.
 

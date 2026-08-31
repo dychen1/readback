@@ -61,7 +61,11 @@ let package = Package(
                 "ReadBackMac",
                 "ReadBackService",
                 "ReadBackSkill",
-            ]
+            ],
+            // SwiftPM does not define DEBUG for the debug configuration on its own
+            // (unlike Xcode); this target's #if DEBUG dev-convenience fallback
+            // relies on it being defined explicitly here.
+            swiftSettings: [.define("DEBUG", .when(configuration: .debug))]
         ),
         .executableTarget(
             name: "ReadBackSkillClientCommand",
