@@ -25,7 +25,6 @@ shift
 case "${command_name}" in
     build|run)
         exec swift "${command_name}" \
-            --disable-sandbox \
             --disable-dependency-cache \
             --cache-path "${cache_dir}/swiftpm" \
             --config-path "${cache_dir}/config" \
