@@ -240,7 +240,9 @@ READBACK_RELEASE_ASSETS_DIR=/absolute/path/to/models Scripts/build-app
 
 ## Upstream projects
 
-ReadBack uses [MLX-Audio Swift](https://github.com/Blaizzy/mlx-audio-swift), [Kokoro](https://huggingface.co/mlx-community/Kokoro-82M-bf16), [Qwen3-TTS](https://huggingface.co/collections/mlx-community/qwen3-tts), [Chatterbox](https://huggingface.co/mlx-community/chatterbox-turbo-fp16), [Hummingbird](https://github.com/hummingbird-project/hummingbird), [Hummingbird WebSocket](https://github.com/hummingbird-project/hummingbird-websocket), and Apple AVFoundation.
+ReadBack uses [MLX-Audio Swift](https://github.com/Blaizzy/mlx-audio-swift), [Kokoro](https://huggingface.co/mlx-community/Kokoro-82M-bf16), [Qwen3-TTS](https://huggingface.co/collections/mlx-community/qwen3-tts), [Chatterbox](https://huggingface.co/mlx-community/chatterbox-turbo-fp16), [Hummingbird](https://github.com/hummingbird-project/hummingbird), [Hummingbird WebSocket](https://github.com/hummingbird-project/hummingbird-websocket), [swift-websocket](https://github.com/hummingbird-project/swift-websocket), and Apple AVFoundation.
+
+Hummingbird WebSocket and swift-websocket are vendored under `Vendor/` rather than fetched from GitHub - see `Vendor/*/README.md` for each package's exact version and any local modification.
 
 ## License
 
