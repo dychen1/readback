@@ -11,7 +11,6 @@ cask "readback" do
   depends_on macos: ">= :sonoma"
 
   app "ReadBack.app"
-  binary "#{appdir}/ReadBack.app/Contents/MacOS/voicepipe"
 
   zap trash: [
     "~/Library/Application Support/ReadBack",

@@ -99,12 +99,14 @@ Registering a new local folder replaces the old registration. You must switch aw
 
 ## Stream text with `voicepipe`
 
-The bundled command reads UTF-8 text from standard input:
+The bundled command reads UTF-8 text from standard input. It lives inside the app bundle rather than on `$PATH` (installing the cask does not add it automatically):
 
 ```sh
 printf 'Hello from ReadBack.' |
-  dist/ReadBack.app/Contents/MacOS/voicepipe
+  /Applications/ReadBack.app/Contents/MacOS/voicepipe
 ```
+
+For a build from source, the path is `dist/ReadBack.app/Contents/MacOS/voicepipe` instead. Symlink it onto your own `$PATH` if you want it available as a plain command.
 
 For a debug build:
 
