@@ -157,5 +157,93 @@ func readBackWebSocketTests() -> [TestCase] {
             try expectEqual(resumeCount, 1, "live resume count")
             try expect(stopped, "playback cancellation should stop the active audio player")
         },
+        TestCase(name: "a second connection failing to start does not cancel the first session") {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let configuration = AppConfiguration.default(modelDirectory: root)
+            let runtime = ImmediateSynthesizer()
+            let player = CancelAwareAudioPlayer()
+            let coordinator = SpeechCoordinator(
+                synthesizer: runtime,
+                player: player
+            )
+            let api = ReadBackAPI(
+                configuration: configuration,
+                modelManager: runtime,
+                coordinator: coordinator
+            )
+            let router = api.makeRouter()
+            let app = Application(
+                router: Router(),
+                server: .http1WebSocketUpgrade(webSocketRouter: router),
+                configuration: .init(address: .hostname("127.0.0.1", port: 0))
+            )
+
+            _ = try await app.test(.live) { client in
+                try await client.ws("/v1/readback/stream") { inbound, outbound, _ in
+                    var iterator = inbound.messages(maxSize: 65_536).makeAsyncIterator()
+                    let encoder = JSONEncoder()
+                    let decoder = JSONDecoder()
+
+                    guard case .text(let readyText) = try await iterator.next() else {
+                        throw TestFailure(description: "missing session ready event")
+                    }
+                    let ready = try decoder.decode(
+                        ReadBackServerEvent.self,
+                        from: Data(readyText.utf8)
+                    )
+                    try expectEqual(ready.type, .sessionReady, "initial stream event")
+
+                    for event in [
+                        ReadBackClientEvent.textAppend("Hold this session open."),
+                        .inputDone,
+                    ] {
+                        let data = try encoder.encode(event)
+                        try await outbound.write(.text(String(decoding: data, as: UTF8.self)))
+                    }
+
+                    // A second connection while the first session is still active must be
+                    // rejected without tearing down the first session's playback.
+                    try await client.ws("/v1/readback/stream") { secondInbound, _, _ in
+                        var secondIterator = secondInbound.messages(maxSize: 65_536).makeAsyncIterator()
+                        guard case .text(let errorText) = try await secondIterator.next() else {
+                            throw TestFailure(description: "second connection should receive an event")
+                        }
+                        let event = try decoder.decode(
+                            ReadBackServerEvent.self,
+                            from: Data(errorText.utf8)
+                        )
+                        try expectEqual(
+                            event.type,
+                            .error,
+                            "second connection is rejected, not upgraded into a session"
+                        )
+                    }
+
+                    // The first session must still be controllable. A handler that
+                    // cancelled it in response to the second connection's failed start
+                    // would leave no live session to acknowledge this pause.
+                    let pauseData = try encoder.encode(ReadBackClientEvent.playbackPause)
+                    try await outbound.write(.text(String(decoding: pauseData, as: UTF8.self)))
+                    var receivedPaused = false
+                    for _ in 0..<6 {
+                        guard case .text(let text) = try await iterator.next() else { break }
+                        let event = try decoder.decode(ReadBackServerEvent.self, from: Data(text.utf8))
+                        if event.type == .playbackPaused {
+                            receivedPaused = true
+                            break
+                        }
+                    }
+                    try expect(
+                        receivedPaused,
+                        "first session still acknowledges control after the second connection failed"
+                    )
+
+                    let cancelData = try encoder.encode(ReadBackClientEvent.playbackCancel)
+                    try await outbound.write(.text(String(decoding: cancelData, as: UTF8.self)))
+                }
+            }
+        },
     ]
 }

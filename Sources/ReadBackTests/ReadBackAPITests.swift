@@ -122,6 +122,59 @@ func readBackAPITests() -> [TestCase] {
             try expectEqual(requests[0].input, "hello", "speech input")
             try expectEqual(requests[0].voice, nil, "manager resolves voice")
         },
+        TestCase(name: "speech rejects a browser-style cross-origin request") {
+            let fixture = APIFixture()
+            let app = Application(responder: fixture.api.makeRouter().buildResponder())
+            let body = ByteBuffer(string: #"{"input":"hello"}"#)
+
+            try await app.test(.router) { client in
+                try await client.execute(
+                    uri: "/v1/audio/speech",
+                    method: .post,
+                    headers: [.contentType: "application/json", .origin: "https://evil.example"],
+                    body: body
+                ) { response in
+                    try expectEqual(response.status.code, 403, "cross-origin speech status")
+                }
+            }
+
+            let requestCount = await fixture.manager.receivedRequests().count
+            try expectEqual(requestCount, 0, "no synthesis for cross-origin request")
+        },
+        TestCase(name: "play rejects a browser-style cross-origin request") {
+            let fixture = APIFixture()
+            let app = Application(responder: fixture.api.makeRouter().buildResponder())
+            let body = ByteBuffer(string: #"{"input":"hello"}"#)
+
+            try await app.test(.router) { client in
+                try await client.execute(
+                    uri: "/play",
+                    method: .post,
+                    headers: [.contentType: "application/json", .origin: "https://evil.example"],
+                    body: body
+                ) { response in
+                    try expectEqual(response.status.code, 403, "cross-origin play status")
+                }
+            }
+        },
+        TestCase(name: "run refuses a non-loopback public host") {
+            var configuration = AppConfiguration.default(modelDirectory: URL(fileURLWithPath: "/tmp"))
+            configuration.publicHost = "0.0.0.0"
+            let manager = APITestModelManager()
+            let coordinator = SpeechCoordinator(synthesizer: manager, player: APIAudioPlayer())
+            let api = ReadBackAPI(
+                configuration: configuration,
+                modelManager: manager,
+                coordinator: coordinator
+            )
+
+            do {
+                try await api.run()
+                throw TestFailure(description: "non-loopback host must be rejected")
+            } catch ReadBackAPIError.hostNotLoopback(let host) {
+                try expectEqual(host, "0.0.0.0", "rejected host echoed back")
+            }
+        },
         TestCase(name: "health reports the active model and runtime") {
             let fixture = APIFixture()
             let app = Application(responder: fixture.api.makeRouter().buildResponder())
