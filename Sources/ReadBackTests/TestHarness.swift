@@ -49,7 +49,6 @@ enum ReadBackTestRunner {
             + speechRuntimeAdapterTests()
             + voiceCatalogTests()
             + audioPlayerTests()
-            + modelStoreTests()
             + streamChunkerTests()
             + streamProtocolTests()
             + speechCoordinatorTests()

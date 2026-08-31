@@ -751,7 +751,7 @@ private enum KokoroDownloadAssets {
                     byteCount: lexicon.size,
                     sha256: lexicon.sha256,
                     downloadURL: URL(
-                        string: "https://huggingface.co/beshkenadze/kokoro-ipa-lexicons/resolve/\(LanguagePackStore.lexiconRevision)/\(filename)"
+                        string: "https://huggingface.co/beshkenadze/kokoro-ipa-lexicons/resolve/\(LanguagePackRevisions.lexicon)/\(filename)"
                     )
                 )
             )
