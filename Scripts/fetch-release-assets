@@ -16,6 +16,23 @@ work_dir="$(mktemp -d)"
 
 trap 'rm -rf "${work_dir}"' EXIT
 
+# One entry per fetched file that has a known-good hash. The Kokoro model/voice
+# values mirror Sources/ReadBackCore/ModelCatalog.swift's KokoroDownloadAssets table
+# so the two checks can never drift apart. Files with no entry here are downloaded
+# with a warning rather than blocked, since their hashes have not been pinned yet.
+typeset -A expected_sha256
+expected_sha256=(
+    "${model_dir}/config.json"                 "5abb01e2403b072bf03d04fde160443e209d7a0dad49a423be15196b9b43c17f"
+    "${model_dir}/kokoro-v1_0.safetensors"      "4e9ecdf03b8b6cf906070390237feda473dc13327cb8d56a43deaa374c02acd8"
+    "${model_dir}/voices/af_heart.safetensors"  "2c1c733b0e6576c810e268d3e440c21dea4e0f0131a3ba4cfc98d7fe6136d094"
+    "${model_dir}/voices/af_bella.safetensors"  "112d310468cbb3cf23404d3d0b50ad3adf017b87bf38bf9edd15f4ad572df6a3"
+    "${model_dir}/voices/af_nicole.safetensors" "574656386022c81a029e9a72558191925f44c3de2dad2fa2e45751938557d062"
+    "${model_dir}/voices/bf_emma.safetensors"   "8878a75a6661305849eeb1d6293a7177250193616e161b4c3100636434dfe69f"
+    "${model_dir}/voices/am_fenrir.safetensors" "9abed964b906c4cae6f404d9849e76260689aea862bc6ca85fc3f5207ba96538"
+    "${model_dir}/voices/am_michael.safetensors" "3940147ded35deba0bb52e8132f89b719298e0520258c34584358aa5a24da2ea"
+    "${model_dir}/voices/ff_siwis.safetensors"  "5c659c9b9e12be28b98a4aa0cd6b1e66f359b6381ba5680264e9072945ac32b8"
+)
+
 fetch() {
     local source_url="$1"
     local destination="$2"
@@ -24,6 +41,18 @@ fetch() {
     fi
     mkdir -p "${destination:h}"
     curl -fL --retry 3 --output "${work_dir}/download" "${source_url}"
+    local expected="${expected_sha256[${destination}]:-}"
+    if [[ -n "${expected}" ]]; then
+        local actual
+        actual="$(shasum -a 256 "${work_dir}/download" | awk '{print $1}')"
+        if [[ "${actual}" != "${expected}" ]]; then
+            print -u2 "Checksum mismatch for ${destination}: expected ${expected}, got ${actual}"
+            rm -f "${work_dir}/download"
+            exit 1
+        fi
+    else
+        print -u2 "warning: no pinned checksum for ${destination}; downloaded unverified"
+    fi
     mv "${work_dir}/download" "${destination}"
 }
 
