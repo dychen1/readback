@@ -210,9 +210,9 @@ public actor ModelManager: ModelManaging {
         guard operation == .idle, case .ready(let modelID) = runtimeState else {
             throw ModelManagerError.modelNotReady
         }
+        let resolved = try await resolvedRequest(request, for: modelID)
         inFlightGenerations += 1
         defer { inFlightGenerations -= 1 }
-        let resolved = try await resolvedRequest(request, for: modelID)
         return try await session.synthesize(resolved)
     }
 
@@ -386,6 +386,9 @@ public actor ModelManager: ModelManaging {
         let preferences = await normalizedPreferences(for: id)
         let definition = await controlDefinition(for: id)
         let voice = request.voice ?? preferences.voiceID
+        if let voice, let definition, !definition.voices.contains(where: { $0.id == voice }) {
+            throw ModelManagerError.invalidVoice(voice)
+        }
         return SpeechRequest(
             input: request.input,
             voice: runtimeVoice(voiceID: voice, definition: definition),

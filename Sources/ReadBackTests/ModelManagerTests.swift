@@ -194,6 +194,26 @@ func modelManagerTests() -> [TestCase] {
             try expectEqual(request?.languageCode, "English", "local Qwen language")
             try expectEqual(local?.languages.map(\.code), ["en", "fr"], "local languages")
         },
+        TestCase(name: "model manager rejects a voice outside the active model's catalog") {
+            let fixture = try ModelManagerFixture()
+            defer { fixture.remove() }
+            await fixture.manager.warmConfiguredModel()
+
+            do {
+                _ = try await fixture.manager.synthesize(
+                    SpeechRequest(
+                        input: "hello",
+                        voice: "../../../../etc/passwd",
+                        languageCode: nil,
+                        speed: 1,
+                        format: .wav
+                    )
+                )
+                throw TestFailure(description: "traversal-style voice must be rejected")
+            } catch let error as ModelManagerError {
+                try expectEqual(error, .invalidVoice("../../../../etc/passwd"), "rejected voice")
+            }
+        },
         TestCase(name: "model manager gives local Chatterbox the standard curated controls") {
             let fixture = try ModelManagerFixture(localRuntime: .chatterboxTurbo)
             defer { fixture.remove() }
