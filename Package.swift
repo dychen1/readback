@@ -27,7 +27,7 @@ let package = Package(
         ),
         .package(
             url: "https://github.com/dychen1/mlx-audio-swift.git",
-            revision: "5331658a94ceeb8e3bf0a84bd5a54e7a94e2fad8"
+            revision: "4f75fe32af92de538bbdb4ddcc71f3a67fd99b8a"
         ),
     ],
     targets: [
