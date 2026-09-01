@@ -267,5 +267,30 @@ func modelCatalogTests() -> [TestCase] {
                 )
             }
         },
+        TestCase(name: "catalog exposes all curated Breeze installs") {
+            let catalog = CuratedModelCatalog.bundled
+            let fourBit = try catalog.model(id: .breezeTTS2FourBit)
+            let eightBit = try catalog.model(id: .breezeTTS2EightBit)
+            let bf16 = try catalog.model(id: .breezeTTS2BF16)
+
+            try expectEqual(fourBit.downloadSize, 3_042_440_182, "4-bit download size")
+            try expectEqual(eightBit.downloadSize, 4_602_674_558, "8-bit download size")
+            try expectEqual(bf16.downloadSize, 7_625_546_547, "BF16 download size")
+            try expectEqual(fourBit.requiredAssets.count, 11, "4-bit assets")
+            try expectEqual(eightBit.requiredAssets.count, 11, "8-bit assets")
+            try expectEqual(bf16.requiredAssets.count, 12, "BF16 assets")
+
+            for model in [fourBit, eightBit, bf16] {
+                try expectEqual(model.runtimeKind, .breeze, "runtime kind")
+                try expectEqual(model.languages.map(\.code), ["en", "zh"], "languages")
+                try expectEqual(model.voices.count, 8, "voice presets")
+                try expect(model.licenseNotice != nil, "license notice")
+                try expectEqual(
+                    model.defaultSelection,
+                    VoiceSelection(languageCode: "en", voiceID: "clear-narrator"),
+                    "default selection"
+                )
+            }
+        },
     ]
 }

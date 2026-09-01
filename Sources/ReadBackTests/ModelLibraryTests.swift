@@ -389,6 +389,20 @@ func modelLibraryTests() -> [TestCase] {
             let profile = try await fixture.library.runtimeProfile(for: .local)
             try expectEqual(profile, .chatterboxTurbo, "local runtime kind")
         },
+        TestCase(name: "local model detection accepts Breeze") {
+            let fixture = try ModelLibraryFixture(validHash: true)
+            defer { fixture.remove() }
+            let local = fixture.rootURL.appendingPathComponent("Local Breeze", isDirectory: true)
+            try FileManager.default.createDirectory(at: local, withIntermediateDirectories: true)
+            try Data(#"{"model_type":"breeze"}"#.utf8)
+                .write(to: local.appendingPathComponent("config.json"))
+            try Data([0x01]).write(to: local.appendingPathComponent("model.safetensors"))
+
+            try await fixture.library.registerLocalModel(at: local)
+
+            let profile = try await fixture.library.runtimeProfile(for: .local)
+            try expectEqual(profile, .breeze, "local runtime kind")
+        },
     ]
 }
 

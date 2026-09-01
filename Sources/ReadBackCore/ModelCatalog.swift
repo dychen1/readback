@@ -18,6 +18,9 @@ public struct ModelID: RawRepresentable, Codable, Hashable, Sendable, CustomStri
     )
     public static let chatterboxTurbo8Bit = ModelID(rawValue: "chatterbox-turbo-8bit")
     public static let chatterboxTurboFP16 = ModelID(rawValue: "chatterbox-turbo-fp16")
+    public static let breezeTTS2FourBit = ModelID(rawValue: "breeze-tts-2-4bit")
+    public static let breezeTTS2EightBit = ModelID(rawValue: "breeze-tts-2-8bit")
+    public static let breezeTTS2BF16 = ModelID(rawValue: "breeze-tts-2-bf16")
     public static let local = ModelID(rawValue: "local")
 }
 
@@ -36,6 +39,7 @@ public enum SpeechRuntimeKind: String, Codable, Equatable, Sendable {
     case kokoro
     case qwen3CustomVoice
     case chatterboxTurbo
+    case breeze
 }
 
 public typealias MLXRuntimeProfile = SpeechRuntimeKind
@@ -88,6 +92,18 @@ public struct ModelAssetDefinition: Codable, Equatable, Sendable {
         self.byteCount = byteCount
         self.sha256 = sha256
         self.downloadURL = downloadURL
+    }
+}
+
+public struct ModelLicenseNotice: Codable, Equatable, Sendable {
+    public let title: String
+    public let summary: String
+    public let url: URL
+
+    public init(title: String, summary: String, url: URL) {
+        self.title = title
+        self.summary = summary
+        self.url = url
     }
 }
 
@@ -182,6 +198,7 @@ public struct CuratedModelDefinition: Codable, Equatable, Identifiable, Sendable
     public let defaultSelection: VoiceSelection?
     public let defaultVoiceByLanguage: [String: String]
     public let defaultSynthesisSpeed: Double
+    public let licenseNotice: ModelLicenseNotice?
 
     public init(
         id: ModelID,
@@ -196,7 +213,8 @@ public struct CuratedModelDefinition: Codable, Equatable, Identifiable, Sendable
         voices: [ModelVoiceDefinition],
         defaultSelection: VoiceSelection?,
         defaultVoiceByLanguage: [String: String],
-        defaultSynthesisSpeed: Double
+        defaultSynthesisSpeed: Double,
+        licenseNotice: ModelLicenseNotice? = nil
     ) {
         self.id = id
         self.displayName = displayName
@@ -211,6 +229,7 @@ public struct CuratedModelDefinition: Codable, Equatable, Identifiable, Sendable
         self.defaultSelection = defaultSelection
         self.defaultVoiceByLanguage = defaultVoiceByLanguage
         self.defaultSynthesisSpeed = defaultSynthesisSpeed
+        self.licenseNotice = licenseNotice
     }
 
     public init(
@@ -225,7 +244,8 @@ public struct CuratedModelDefinition: Codable, Equatable, Identifiable, Sendable
         languages: [ModelLanguageDefinition],
         defaultVoiceID: String?,
         defaultLanguageCode: String?,
-        defaultSynthesisSpeed: Double
+        defaultSynthesisSpeed: Double,
+        licenseNotice: ModelLicenseNotice? = nil
     ) {
         let normalizedVoices = languages.flatMap { language in
             language.voices.map { voice in
@@ -260,7 +280,8 @@ public struct CuratedModelDefinition: Codable, Equatable, Identifiable, Sendable
             voices: normalizedVoices,
             defaultSelection: selection,
             defaultVoiceByLanguage: defaults,
-            defaultSynthesisSpeed: defaultSynthesisSpeed
+            defaultSynthesisSpeed: defaultSynthesisSpeed,
+            licenseNotice: licenseNotice
         )
     }
 
@@ -326,6 +347,9 @@ public struct CuratedModelCatalog: Sendable {
                     .qwen3CustomVoice06BBF16,
                     .chatterboxTurbo8Bit,
                     .chatterboxTurboFP16,
+                    .breezeTTS2FourBit,
+                    .breezeTTS2EightBit,
+                    .breezeTTS2BF16,
                 ]
             )
         } catch {
@@ -498,6 +522,30 @@ public extension CuratedModelDefinition {
         assets: ChatterboxTurboDownloadAssets.fp16
     )
 
+    static let breezeTTS2FourBit = breezeTTS2(
+        id: .breezeTTS2FourBit,
+        displayName: "Breeze TTS 2 4-bit",
+        repository: "mlx-community/Breeze-TTS-2-mlx-4bit",
+        revision: "3a06d26b172ea4ae1da2f42d708383e9c79d5526",
+        assets: BreezeTTS2DownloadAssets.fourBit
+    )
+
+    static let breezeTTS2EightBit = breezeTTS2(
+        id: .breezeTTS2EightBit,
+        displayName: "Breeze TTS 2 8-bit",
+        repository: "mlx-community/Breeze-TTS-2-mlx-8bit",
+        revision: "c6e4a2ff6ab9afba68b7853de802273ffe23fb49",
+        assets: BreezeTTS2DownloadAssets.eightBit
+    )
+
+    static let breezeTTS2BF16 = breezeTTS2(
+        id: .breezeTTS2BF16,
+        displayName: "Breeze TTS 2 BF16",
+        repository: "mlx-community/Breeze-TTS-2-mlx",
+        revision: "3c8829fb7fd335818f085cd2ef49b4100c0e46c8",
+        assets: BreezeTTS2DownloadAssets.bf16
+    )
+
     private static func qwen3CustomVoice(
         id: ModelID,
         displayName: String,
@@ -599,6 +647,162 @@ public extension CuratedModelDefinition {
             defaultVoiceByLanguage: ["en": "default"],
             defaultSynthesisSpeed: 1
         )
+    }
+
+    private static func breezeTTS2(
+        id: ModelID,
+        displayName: String,
+        repository: String,
+        revision: String,
+        assets: [ModelAssetDefinition]
+    ) -> CuratedModelDefinition {
+        let voices = [
+            ModelVoiceDefinition(
+                id: "clear-narrator",
+                displayName: "Clear Narrator",
+                runtimeValue: "A clear, natural English narrator with steady pacing",
+                supportedLanguageCodes: ["en"]
+            ),
+            ModelVoiceDefinition(
+                id: "warm-guide",
+                displayName: "Warm Guide",
+                runtimeValue: "A warm, friendly English voice with relaxed pacing",
+                supportedLanguageCodes: ["en"]
+            ),
+            ModelVoiceDefinition(
+                id: "calm-reader",
+                displayName: "Calm Reader",
+                runtimeValue: "A calm English reading voice with soft tone and even pacing",
+                supportedLanguageCodes: ["en"]
+            ),
+            ModelVoiceDefinition(
+                id: "bright-speaker",
+                displayName: "Bright Speaker",
+                runtimeValue: "A bright, lively English voice with clear diction",
+                supportedLanguageCodes: ["en"]
+            ),
+            ModelVoiceDefinition(
+                id: "qing-xi-pang-bai",
+                displayName: "清晰旁白",
+                runtimeValue: "清晰自然的普通话旁白，语速平稳",
+                supportedLanguageCodes: ["zh"]
+            ),
+            ModelVoiceDefinition(
+                id: "wen-nuan-dao-du",
+                displayName: "温暖导读",
+                runtimeValue: "温暖亲切的普通话声音，语速舒缓",
+                supportedLanguageCodes: ["zh"]
+            ),
+            ModelVoiceDefinition(
+                id: "chen-jing-yue-du",
+                displayName: "沉静阅读",
+                runtimeValue: "沉静自然的普通话阅读声音，语调柔和",
+                supportedLanguageCodes: ["zh"]
+            ),
+            ModelVoiceDefinition(
+                id: "ming-liang-bo-bao",
+                displayName: "明亮播报",
+                runtimeValue: "明亮有活力的普通话播报声音，吐字清楚",
+                supportedLanguageCodes: ["zh"]
+            ),
+        ]
+        return CuratedModelDefinition(
+            id: id,
+            displayName: displayName,
+            repository: repository,
+            revision: revision,
+            distribution: .downloadable,
+            runtimeKind: .breeze,
+            downloadSize: assets.reduce(Int64(0)) { $0 + $1.byteCount },
+            requiredAssets: assets,
+            languages: [
+                ModelLanguageDefinition(
+                    code: "en",
+                    displayName: "English",
+                    runtimeValue: "English",
+                    distribution: .includedWithModel,
+                    requiredAssets: []
+                ),
+                ModelLanguageDefinition(
+                    code: "zh",
+                    displayName: "Mandarin Chinese",
+                    runtimeValue: "Chinese",
+                    distribution: .includedWithModel,
+                    requiredAssets: []
+                ),
+            ],
+            voices: voices,
+            defaultSelection: VoiceSelection(languageCode: "en", voiceID: "clear-narrator"),
+            defaultVoiceByLanguage: ["en": "clear-narrator", "zh": "qing-xi-pang-bai"],
+            defaultSynthesisSpeed: 1,
+            licenseNotice: ModelLicenseNotice(
+                title: "Breeze TTS 2 model license",
+                summary: "Breeze model weights and self-hosted output are for research and non-commercial use. By installing, you agree to review and follow the model license.",
+                url: URL(string: "https://huggingface.co/BreezeBlue/Breeze-TTS-2")!
+            )
+        )
+    }
+}
+
+private enum BreezeTTS2DownloadAssets {
+    static let fourBit = common(
+        configSize: 12_379,
+        configHash: "f6871e70a5e937cf23f8ca6eb252ea377c9e489f87f3f7c70b76066ff5768bdf",
+        indexSize: 98_863,
+        indexHash: "fe6889d333789126501d6f3c5aa9fe198b00477403c7c1507d86f8cf3b32e381",
+        weights: [
+            asset("model.safetensors", 2_325_487_160, "e8499e75e043b16d0734897869a124198aca2fa88436eb83c855d58a39fdac0a")
+        ]
+    )
+
+    static let eightBit = common(
+        configSize: 12_379,
+        configHash: "91cf471c3a9bd00e61046a5e08dce22967f161e75488d21b128026154111be65",
+        indexSize: 98_863,
+        indexHash: "113da60084ed077d67dd99706e5619f4c40056d777225923302cb957b3677026",
+        weights: [
+            asset("model.safetensors", 3_885_721_536, "d7a82315bcc59c3057f13bb85100743c7cd40692e38145fb255d6c1f0bf447bc")
+        ]
+    )
+
+    static let bf16 = common(
+        configSize: 12_176,
+        configHash: "11f40bae4cb68c87638d3998c78926f7b5143c4ca7aa782e50c02209dbb072c0",
+        indexSize: 73_409,
+        indexHash: "b2b8ad998777f80440a51b8504d22c44575623e8bae3a76a925bccc59725ad02",
+        weights: [
+            asset("model-00001-of-00002.safetensors", 4_904_052_381, "06c0acb9057e13659aa297a889001dcf86f181d1355ef84c1134ba8b72313572"),
+            asset("model-00002-of-00002.safetensors", 2_004_566_801, "83e7d3a903b70a0be2a1f3dc1b37c4605678536efe9e1a45b86fd70599f5bf77"),
+        ]
+    )
+
+    private static func common(
+        configSize: Int64,
+        configHash: String,
+        indexSize: Int64,
+        indexHash: String,
+        weights: [ModelAssetDefinition]
+    ) -> [ModelAssetDefinition] {
+        [
+            asset("config.json", configSize, configHash),
+            asset("generation_config.json", 251, "2ef3f2c0ab8d9ad241059138a795433c5410fd9954efb9625674ecd2a9529434"),
+            asset("model.safetensors.index.json", indexSize, indexHash),
+            asset("special_tokens_map.json", 886, "194f265bb588d142a16f27d9576104eb3dab3d7ba9961541d2d6e3d5e77e6470"),
+            asset("tokenizer.json", 33_386_945, "d3ec9ac3eb2392389b9f5112e85d8b43316494addb587ba7b7a9d61eac23af96"),
+            asset("tokenizer_config.json", 1_157_960, "2c084fd6725c2284e8aa6da095a8d036d48fe79665595bfcd50371821b620e44"),
+            asset("audio_tokenizer/config.json", 2_336, "ee65bb901c876664ab8707c487157aa1a6ee57c65969b28fb5ec9dc211e68167"),
+            asset("audio_tokenizer/configuration.json", 76, "6bc26d64eb5024b4d1dab5a52371958b429256d6c9d59787f1f5294a54e0cebd"),
+            asset("audio_tokenizer/model.safetensors", 682_293_092, "836b7b357f5ea43e889936a3709af68dfe3751881acefe4ecf0dbd30ba571258"),
+            asset("audio_tokenizer/preprocessor_config.json", 234, "fcb3805e597e786d4067706e602f6688524640f8d3396790e2e09b5942fcbdfb"),
+        ] + weights
+    }
+
+    private static func asset(
+        _ path: String,
+        _ size: Int64,
+        _ sha256: String
+    ) -> ModelAssetDefinition {
+        ModelAssetDefinition(relativePath: path, byteCount: size, sha256: sha256)
     }
 }
 

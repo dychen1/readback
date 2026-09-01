@@ -58,6 +58,7 @@ public struct ModelSnapshot: Equatable, Identifiable, Sendable {
     public let origin: ModelOrigin
     public let storageState: ModelStorageState
     public let downloadSize: Int64?
+    public let licenseNotice: ModelLicenseNotice?
     public let languages: [ModelLanguageSnapshot]
     public let canInstall: Bool
     public let canRemove: Bool
@@ -69,6 +70,7 @@ public struct ModelSnapshot: Equatable, Identifiable, Sendable {
         origin: ModelOrigin,
         storageState: ModelStorageState,
         downloadSize: Int64? = nil,
+        licenseNotice: ModelLicenseNotice? = nil,
         languages: [ModelLanguageSnapshot],
         canInstall: Bool,
         canRemove: Bool,
@@ -79,6 +81,7 @@ public struct ModelSnapshot: Equatable, Identifiable, Sendable {
         self.origin = origin
         self.storageState = storageState
         self.downloadSize = downloadSize
+        self.licenseNotice = licenseNotice
         self.languages = languages
         self.canInstall = canInstall
         self.canRemove = canRemove
@@ -543,6 +546,8 @@ public actor ModelManager: ModelManaging {
             .qwen3CustomVoice06B8Bit
         case .chatterboxTurbo:
             .chatterboxTurbo8Bit
+        case .breeze:
+            .breezeTTS2FourBit
         case .kokoro:
             nil
         }
@@ -590,6 +595,7 @@ public actor ModelManager: ModelManaging {
                     downloadSize: model.distribution == .downloadable
                         ? model.downloadSize
                         : nil,
+                    licenseNotice: model.licenseNotice,
                     languages: languages,
                     canInstall: canInstall,
                     canRemove: installed

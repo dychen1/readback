@@ -1,5 +1,5 @@
 {
-  "originHash" : "42f11e784d6da844deac9f9f5003937bb2282dab3f88911bca4bd0b35dc977ff",
+  "originHash" : "039b5a6b9a6ff288f74b70c0fea85a9b7cb68dc16c8b9f5a25cd2d8b2d70e040",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -40,10 +40,9 @@
     {
       "identity" : "mlx-audio-swift",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/Blaizzy/mlx-audio-swift.git",
+      "location" : "https://github.com/dychen1/mlx-audio-swift.git",
       "state" : {
-        "revision" : "d302a5c6080d2bb97bae38c7418f82abb76013b6",
-        "version" : "0.1.3"
+        "revision" : "5331658a94ceeb8e3bf0a84bd5a54e7a94e2fad8"
       }
     },
     {

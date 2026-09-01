@@ -72,6 +72,21 @@ func inferenceSmokeTests() -> [TestCase] {
             else { return }
             try await runChatterboxSmoke(modelID: .chatterboxTurboFP16)
         },
+        TestCase(name: "curated Breeze 4-bit installs and generates a local WAV") {
+            guard ProcessInfo.processInfo.environment["READBACK_RUN_BREEZE_4BIT_SMOKE"] == "1"
+            else { return }
+            try await runBreezeSmoke(modelID: .breezeTTS2FourBit)
+        },
+        TestCase(name: "curated Breeze 8-bit installs and generates a local WAV") {
+            guard ProcessInfo.processInfo.environment["READBACK_RUN_BREEZE_8BIT_SMOKE"] == "1"
+            else { return }
+            try await runBreezeSmoke(modelID: .breezeTTS2EightBit)
+        },
+        TestCase(name: "curated Breeze BF16 installs and generates a local WAV") {
+            guard ProcessInfo.processInfo.environment["READBACK_RUN_BREEZE_BF16_SMOKE"] == "1"
+            else { return }
+            try await runBreezeSmoke(modelID: .breezeTTS2BF16)
+        },
     ]
 }
 
@@ -162,5 +177,50 @@ private func runChatterboxSmoke(modelID: ModelID) async throws {
         String(decoding: clip.data.prefix(4), as: UTF8.self),
         "RIFF",
         "Chatterbox smoke WAV header"
+    )
+}
+
+private func runBreezeSmoke(modelID: ModelID) async throws {
+    let support = FileManager.default.urls(
+        for: .applicationSupportDirectory,
+        in: .userDomainMask
+    )[0].appendingPathComponent("ReadBack", isDirectory: true)
+    let session = MLXSpeechModelSession()
+    let library = ModelLibrary(
+        catalog: .bundled,
+        paths: ModelLibraryPaths(
+            managedModelsURL: support.appendingPathComponent("Models", isDirectory: true),
+            downloadsURL: support.appendingPathComponent("Downloads", isDirectory: true),
+            localRegistrationURL: support.appendingPathComponent("local-model.json")
+        ),
+        bundledModels: [:],
+        validator: session
+    )
+    if await library.storageState(for: modelID) != .installed {
+        let reporter = SmokeProgressReporter(label: "Breeze")
+        try await library.install(modelID) { progress in
+            await reporter.report(progress)
+        }
+    }
+
+    let location = try await library.location(for: modelID)
+    try await session.load(from: location.directoryURL, profile: .breeze)
+    let clip = try await session.synthesize(
+        SpeechRequest(
+            input: "test, hello world",
+            voice: "A clear, natural English narrator with steady pacing",
+            languageCode: "English",
+            speed: 1,
+            format: .wav
+        )
+    )
+    await session.unload()
+
+    try expectEqual(clip.format, .wav, "Breeze smoke audio format")
+    try expect(clip.data.count > 44, "Breeze smoke WAV should contain samples")
+    try expectEqual(
+        String(decoding: clip.data.prefix(4), as: UTF8.self),
+        "RIFF",
+        "Breeze smoke WAV header"
     )
 }

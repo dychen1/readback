@@ -1,9 +1,11 @@
+import AppKit
 import Foundation
 import ReadBackCore
 import SwiftUI
 
 struct ModelManagerView: View {
     @ObservedObject var controller: ServiceController
+    @State private var pendingLicensedInstall: ModelSnapshot?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -68,6 +70,31 @@ struct ModelManagerView: View {
                 .lineLimit(2)
         }
         .padding(20)
+        .alert(
+            pendingLicensedInstall?.licenseNotice?.title ?? "Model license",
+            isPresented: Binding(
+                get: { pendingLicensedInstall != nil },
+                set: { if !$0 { pendingLicensedInstall = nil } }
+            )
+        ) {
+            Button("Review License") {
+                if let url = pendingLicensedInstall?.licenseNotice?.url {
+                    NSWorkspace.shared.open(url)
+                }
+                pendingLicensedInstall = nil
+            }
+            Button("Accept and Install") {
+                if let model = pendingLicensedInstall {
+                    controller.installModel(model)
+                }
+                pendingLicensedInstall = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingLicensedInstall = nil
+            }
+        } message: {
+            Text(pendingLicensedInstall?.licenseNotice?.summary ?? "")
+        }
     }
 
     @ViewBuilder
@@ -100,7 +127,13 @@ struct ModelManagerView: View {
                 Button("Use") { controller.activateModel(model.id) }
                     .disabled(!controller.canChangeModel)
             } else if model.canInstall {
-                Button("Install") { controller.installModel(model) }
+                Button("Install") {
+                    if model.licenseNotice == nil {
+                        controller.installModel(model)
+                    } else {
+                        pendingLicensedInstall = model
+                    }
+                }
             }
             if model.canRemove {
                 Button(role: .destructive) {

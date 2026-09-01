@@ -198,6 +198,61 @@ func speechRuntimeAdapterTests() -> [TestCase] {
                 )
             }
         },
+        TestCase(name: "Breeze adapter passes its voice design instruction") {
+            let generator = RuntimeFixtureGenerator()
+            let registry = DefaultSpeechRuntimeRegistry(
+                loader: RuntimeFixtureLoader(generator: generator),
+                languageResourceRoots: [],
+                clearCache: {}
+            )
+            let adapter = try registry.makeAdapter(for: .breeze)
+            let directory = try runtimeFixtureDirectory(config: #"{"model_type":"breeze"}"#)
+            defer { try? FileManager.default.removeItem(at: directory) }
+
+            try await adapter.loadModel(at: directory)
+            let stream = try await adapter.synthesize(
+                ResolvedSpeechRequest(
+                    input: "Hello",
+                    selection: VoiceSelection(languageCode: "en", voiceID: "clear-narrator"),
+                    voiceRuntimeValue: "A clear, natural English narrator with steady pacing",
+                    languageRuntimeValue: "English",
+                    format: .wav
+                )
+            )
+            for try await _ in stream {}
+
+            let request = await generator.request()
+            let runtimeKind = await adapter.kind
+            try expectEqual(runtimeKind, .breeze, "runtime kind")
+            try expectEqual(
+                request.voice,
+                "A clear, natural English narrator with steady pacing",
+                "voice instruction"
+            )
+            try expectEqual(request.language, "English", "language")
+        },
+        TestCase(name: "Breeze adapter rejects another model family") {
+            let generator = RuntimeFixtureGenerator()
+            let registry = DefaultSpeechRuntimeRegistry(
+                loader: RuntimeFixtureLoader(generator: generator),
+                languageResourceRoots: [],
+                clearCache: {}
+            )
+            let adapter = try registry.makeAdapter(for: .breeze)
+            let directory = try runtimeFixtureDirectory(config: #"{"model_type":"qwen3_tts"}"#)
+            defer { try? FileManager.default.removeItem(at: directory) }
+
+            do {
+                try await adapter.validateModel(at: directory)
+                throw TestFailure(description: "Qwen should fail Breeze validation")
+            } catch let error as SpeechRuntimeAdapterError {
+                try expectEqual(
+                    error,
+                    .unsupportedModelConfiguration(.breeze),
+                    "adapter error"
+                )
+            }
+        },
     ]
 }
 

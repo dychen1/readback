@@ -26,8 +26,8 @@ let package = Package(
             exact: "2.26.0"
         ),
         .package(
-            url: "https://github.com/Blaizzy/mlx-audio-swift.git",
-            exact: "0.1.3"
+            url: "https://github.com/dychen1/mlx-audio-swift.git",
+            revision: "5331658a94ceeb8e3bf0a84bd5a54e7a94e2fad8"
         ),
     ],
     targets: [

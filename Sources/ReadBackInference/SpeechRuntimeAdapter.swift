@@ -129,6 +129,12 @@ public struct DefaultSpeechRuntimeRegistry: SpeechRuntimeRegistry, @unchecked Se
                 fileManager: fileManager,
                 clearCache: clearCache
             )
+        case .breeze:
+            BreezeRuntimeAdapter(
+                loader: loader,
+                fileManager: fileManager,
+                clearCache: clearCache
+            )
         }
     }
 }

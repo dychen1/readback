@@ -2,7 +2,7 @@
 
 ## TL;DR
 
-ReadBack is a native macOS menu-bar app for reading back copied or streamed text into audio locally on your Mac. The app includes Kokoro 82M BF16, English, and French out the box and fast install options for select Qwen3 and Chatterbox models from HuggingFace. This project also includes support for loading local MLX models. ReadBack keeps one model actively loaded at a time.
+ReadBack is a native macOS menu-bar app for reading back copied or streamed text into audio locally on your Mac. The app includes Kokoro 82M BF16, English, and French out the box and fast install options for select Qwen3, Chatterbox, and Breeze models from Hugging Face. This project also includes support for loading local MLX models. ReadBack keeps one model actively loaded at a time.
 
 ## Listen
 
@@ -29,7 +29,7 @@ All six files use mono, 24 kHz, 16-bit PCM WAV. They use each engine's 1× speak
 - A loopback HTTP and WebSocket service on `127.0.0.1:51280`
 - `voicepipe`, a small command that speaks streamed standard input
 - Bundled Kokoro 82M BF16 with six English voices and one French voice
-- One-click Qwen3 CustomVoice 0.6B and Chatterbox Turbo installs in 8-bit and 16-bit forms
+- One-click Qwen3 CustomVoice, Chatterbox Turbo, and Breeze TTS 2 installs in several precision levels
 - One-click installs for Japanese, Mandarin Chinese, Spanish, Hindi, Italian, and Brazilian Portuguese
 - One local MLX model slot for technical users
 
@@ -86,14 +86,19 @@ Kokoro is bundled, active by default, and cannot be removed. English and French 
 | Qwen3 CustomVoice 0.6B BF16 | 2.50 GB |
 | Chatterbox Turbo 8-bit | 708 MB |
 | Chatterbox Turbo FP16 | 2.99 GB |
+| Breeze TTS 2 4-bit | 3.04 GB |
+| Breeze TTS 2 8-bit | 4.60 GB |
+| Breeze TTS 2 BF16 | 7.63 GB |
 
 Each choice uses the same curated controls for its model family. ReadBack downloads files from a pinned revision, checks each size and SHA-256 hash, publishes only a complete model, and clears its staging folder after a successful install. The Settings window uses the same process for optional Kokoro language files.
+
+Breeze TTS 2 includes four curated English voice designs and four Mandarin Chinese voice designs. Before an install starts, ReadBack shows the Breeze license terms and links to the model card. Breeze weights and self-hosted output allow research and non-commercial use only.
 
 ReadBack stores settings per model. Switching back to a model restores its last voice and language. It keeps only one model loaded, then clears the old MLX cache during a switch.
 
 ### Add a local model
 
-Choose **Settings → Choose Local MLX Model…** and select a model directory. ReadBack uses the folder in place and never copies or deletes its weights. The current release accepts local Kokoro-compatible MLX folders with `config.json` and SafeTensors weights. It performs a real load and preview before it makes the model active.
+Choose **Settings → Choose Local MLX Model…** and select a model directory. ReadBack uses the folder in place and never copies or deletes its weights. The current release accepts supported Kokoro, Qwen3 CustomVoice, Chatterbox Turbo, and Breeze folders with `config.json` and SafeTensors weights. It performs a real load and preview before it makes the model active.
 
 Registering a new local folder replaces the old registration. You must switch away from the local model first.
 
@@ -240,7 +245,7 @@ READBACK_RELEASE_ASSETS_DIR=/absolute/path/to/models Scripts/build-app
 
 ## Upstream projects
 
-ReadBack uses [MLX-Audio Swift](https://github.com/Blaizzy/mlx-audio-swift), [Kokoro](https://huggingface.co/mlx-community/Kokoro-82M-bf16), [Qwen3-TTS](https://huggingface.co/collections/mlx-community/qwen3-tts), [Chatterbox](https://huggingface.co/mlx-community/chatterbox-turbo-fp16), [Hummingbird](https://github.com/hummingbird-project/hummingbird), [Hummingbird WebSocket](https://github.com/hummingbird-project/hummingbird-websocket), [swift-websocket](https://github.com/hummingbird-project/swift-websocket), and Apple AVFoundation.
+ReadBack uses [MLX-Audio Swift](https://github.com/Blaizzy/mlx-audio-swift), [Kokoro](https://huggingface.co/mlx-community/Kokoro-82M-bf16), [Qwen3-TTS](https://huggingface.co/collections/mlx-community/qwen3-tts), [Chatterbox](https://huggingface.co/mlx-community/chatterbox-turbo-fp16), [Breeze TTS 2](https://huggingface.co/BreezeBlue/Breeze-TTS-2), [Hummingbird](https://github.com/hummingbird-project/hummingbird), [Hummingbird WebSocket](https://github.com/hummingbird-project/hummingbird-websocket), [swift-websocket](https://github.com/hummingbird-project/swift-websocket), and Apple AVFoundation.
 
 Hummingbird WebSocket and swift-websocket are vendored under `Vendor/` rather than fetched from GitHub - see `Vendor/*/README.md` for each package's exact version and any local modification.
 
