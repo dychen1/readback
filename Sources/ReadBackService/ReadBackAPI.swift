@@ -57,6 +57,10 @@ private struct StreamSpeechSettings: Sendable {
     let paragraphPause: Double
 }
 
+public enum ReadBackAPIError: Error, Equatable, Sendable {
+    case hostNotLoopback(String)
+}
+
 public final class ReadBackAPI: @unchecked Sendable {
     public let configuration: AppConfiguration
     private let modelManager: any ModelManaging
@@ -94,6 +98,7 @@ public final class ReadBackAPI: @unchecked Sendable {
         }
 
         router.post("/v1/audio/speech") { [self] request, context -> Response in
+            guard Self.isOriginAllowed(request) else { return originRejectedResponse() }
             do {
                 let publicRequest = try await decodeSpeechRequest(request, context: context)
                 let defaults = await activeSettings()
@@ -123,6 +128,7 @@ public final class ReadBackAPI: @unchecked Sendable {
         }
 
         router.post("/play") { [self] request, context -> Response in
+            guard Self.isOriginAllowed(request) else { return originRejectedResponse() }
             do {
                 let publicRequest = try await decodeSpeechRequest(request, context: context)
                 let defaults = await activeSettings()
@@ -142,11 +148,14 @@ public final class ReadBackAPI: @unchecked Sendable {
             }
         }
 
-        router.ws("/v1/readback/stream") { [self] inbound, outbound, _ in
+        router.ws("/v1/readback/stream", shouldUpgrade: { request, _ in
+            Self.isOriginAllowed(request) ? .upgrade([:]) : .dontUpgrade
+        }) { [self] inbound, outbound, _ in
             let sessionID = UUID().uuidString
             var chunker = StreamingTextChunker()
             let settings = await activeSettings()
             var pauseBefore = 0.0
+            var didStartSession = false
             do {
                 try await coordinator.startSession(id: sessionID) { [encoder] event in
                     guard let data = try? encoder.encode(event),
@@ -154,6 +163,7 @@ public final class ReadBackAPI: @unchecked Sendable {
                     else { return }
                     try? await outbound.write(.text(text))
                 }
+                didStartSession = true
 
                 for try await message in inbound.messages(maxSize: 65_536) {
                     guard case .text(let text) = message else { continue }
@@ -192,7 +202,9 @@ public final class ReadBackAPI: @unchecked Sendable {
                 }
                 await coordinator.cancel()
             } catch {
-                await coordinator.cancel()
+                if didStartSession {
+                    await coordinator.cancel()
+                }
                 let event = ReadBackServerEvent(
                     type: .error,
                     sessionID: sessionID,
@@ -210,6 +222,9 @@ public final class ReadBackAPI: @unchecked Sendable {
     }
 
     public func run() async throws {
+        guard Self.isLoopbackHost(configuration.publicHost) else {
+            throw ReadBackAPIError.hostNotLoopback(configuration.publicHost)
+        }
         let router = makeRouter()
         let app = Application(
             router: router,
@@ -271,6 +286,37 @@ public final class ReadBackAPI: @unchecked Sendable {
             }
         }
         return nextPause
+    }
+
+    private static func isOriginAllowed(_ request: Request) -> Bool {
+        // Most native local clients (voicepipe's URLSessionWebSocketTask, curl) never
+        // send an Origin header at all, so a missing header is always allowed. Some
+        // WebSocket client libraries (e.g. the vendored swift-websocket used in tests,
+        // whose Origin omits the port entirely) set Origin to their own connection URL
+        // regardless of context, so a present Origin is allowed only when its host
+        // names this service's own loopback address. A real browser-based attacker
+        // page's Origin is the ATTACKER PAGE's origin (e.g. https://evil.example) —
+        // never 127.0.0.1/localhost — so this still blocks the actual drive-by attack
+        // while accepting loopback-native clients regardless of how they format Origin.
+        guard let origin = request.headers[.origin] else { return true }
+        guard let host = URL(string: origin)?.host else { return false }
+        return host == "127.0.0.1" || host == "localhost" || host == "::1"
+    }
+
+    private static func isLoopbackHost(_ host: String) -> Bool {
+        host == "127.0.0.1" || host == "localhost" || host == "::1"
+    }
+
+    private func originRejectedResponse() -> Response {
+        jsonResponse(
+            ServiceErrorResponse(
+                error: .init(
+                    code: "origin_not_allowed",
+                    message: "ReadBack does not accept requests from a browser origin."
+                )
+            ),
+            status: .forbidden
+        )
     }
 
     private func modelSelectionErrorResponse() -> Response {

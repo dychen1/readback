@@ -99,12 +99,14 @@ Registering a new local folder replaces the old registration. You must switch aw
 
 ## Stream text with `voicepipe`
 
-The bundled command reads UTF-8 text from standard input:
+The bundled command reads UTF-8 text from standard input. It lives inside the app bundle rather than on `$PATH` (installing the cask does not add it automatically):
 
 ```sh
 printf 'Hello from ReadBack.' |
-  dist/ReadBack.app/Contents/MacOS/voicepipe
+  /Applications/ReadBack.app/Contents/MacOS/voicepipe
 ```
+
+For a build from source, the path is `dist/ReadBack.app/Contents/MacOS/voicepipe` instead. Symlink it onto your own `$PATH` if you want it available as a plain command.
 
 For a debug build:
 
@@ -238,7 +240,9 @@ READBACK_RELEASE_ASSETS_DIR=/absolute/path/to/models Scripts/build-app
 
 ## Upstream projects
 
-ReadBack uses [MLX-Audio Swift](https://github.com/Blaizzy/mlx-audio-swift), [Kokoro](https://huggingface.co/mlx-community/Kokoro-82M-bf16), [Qwen3-TTS](https://huggingface.co/collections/mlx-community/qwen3-tts), [Chatterbox](https://huggingface.co/mlx-community/chatterbox-turbo-fp16), [Hummingbird](https://github.com/hummingbird-project/hummingbird), [Hummingbird WebSocket](https://github.com/hummingbird-project/hummingbird-websocket), and Apple AVFoundation.
+ReadBack uses [MLX-Audio Swift](https://github.com/Blaizzy/mlx-audio-swift), [Kokoro](https://huggingface.co/mlx-community/Kokoro-82M-bf16), [Qwen3-TTS](https://huggingface.co/collections/mlx-community/qwen3-tts), [Chatterbox](https://huggingface.co/mlx-community/chatterbox-turbo-fp16), [Hummingbird](https://github.com/hummingbird-project/hummingbird), [Hummingbird WebSocket](https://github.com/hummingbird-project/hummingbird-websocket), [swift-websocket](https://github.com/hummingbird-project/swift-websocket), and Apple AVFoundation.
+
+Hummingbird WebSocket and swift-websocket are vendored under `Vendor/` rather than fetched from GitHub - see `Vendor/*/README.md` for each package's exact version and any local modification.
 
 ## License
 

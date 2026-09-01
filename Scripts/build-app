@@ -15,6 +15,14 @@ languages_source="${assets_root}/Languages"
 codesign_identity="${READBACK_CODESIGN_IDENTITY:--}"
 mlx_metallib="${assets_root}/MLX/0.31.1/mlx.metallib"
 
+if [[ "${codesign_identity}" == "-" && "${READBACK_ALLOW_AD_HOC_SIGN:-}" != "1" ]]; then
+    print -u2 "READBACK_CODESIGN_IDENTITY is not set. This would produce an" \
+        "ad-hoc-signed, non-hardened-runtime build unsuitable for release."
+    print -u2 "Set READBACK_CODESIGN_IDENTITY to a Developer ID, or set" \
+        "READBACK_ALLOW_AD_HOC_SIGN=1 to build an ad-hoc local/dev build anyway."
+    exit 1
+fi
+
 READBACK_RELEASE_ASSETS_DIR="${assets_root}" "${script_dir}/fetch-release-assets"
 
 required_files=(
@@ -74,10 +82,21 @@ for voice in "${bundled_voices[@]}"; do
 done
 cp -R "${languages_source}/en" "${languages_source}/fr" "${resources_dir}/Languages/"
 
+nested_code=(
+    "${contents_dir}/MacOS/mlx.metallib"
+    "${contents_dir}/MacOS/voicepipe"
+    "${skill_target}/scripts/readback-skill-client"
+)
 if [[ "${codesign_identity}" == "-" ]]; then
-    codesign --force --deep --sign - "${bundle_dir}"
+    for nested_path in "${nested_code[@]}"; do
+        codesign --force --sign - "${nested_path}"
+    done
+    codesign --force --sign - "${bundle_dir}"
 else
-    codesign --force --deep --options runtime --timestamp --sign "${codesign_identity}" "${bundle_dir}"
+    for nested_path in "${nested_code[@]}"; do
+        codesign --force --options runtime --timestamp --sign "${codesign_identity}" "${nested_path}"
+    done
+    codesign --force --options runtime --timestamp --sign "${codesign_identity}" "${bundle_dir}"
 fi
 
 print "Built ${bundle_dir}"

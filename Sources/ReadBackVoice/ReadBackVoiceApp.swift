@@ -378,13 +378,18 @@ final class ServiceController: ObservableObject {
             "Skills/readback",
             isDirectory: true
         )
+        let skillSourceURL: URL
+        #if DEBUG
         let developmentSkillURL = URL(
             fileURLWithPath: FileManager.default.currentDirectoryPath,
             isDirectory: true
         ).appendingPathComponent("Skills/readback", isDirectory: true)
-        let skillSourceURL = FileManager.default.fileExists(atPath: bundledSkillURL.path)
+        skillSourceURL = FileManager.default.fileExists(atPath: bundledSkillURL.path)
             ? bundledSkillURL
             : developmentSkillURL
+        #else
+        skillSourceURL = bundledSkillURL
+        #endif
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
         let installer = ReadBackSkillInstaller(
             sourceURL: skillSourceURL,
