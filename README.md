@@ -10,16 +10,43 @@ Each sample reads the first two sentences of Herman Melville's [*Moby-Dick*](htt
 
 > Call me Ishmael. Some years ago—never mind how long precisely—having little or no money in my purse, and nothing particular to interest me on shore, I thought I would sail about a little and see the watery part of the world.
 
-| Engine | Voice | Recording |
-| --- | --- | --- |
-| Kokoro 82M BF16 | Heart | [Listen to Kokoro](Demo/kokoro-heart.wav) |
-| Qwen3 CustomVoice 0.6B 8-bit | Ryan | [Listen to Qwen3 8-bit](Demo/qwen3-8bit-ryan.wav) |
-| Qwen3 CustomVoice 0.6B BF16 | Ryan | [Listen to Qwen3 BF16](Demo/qwen3-bf16-ryan.wav) |
-| Chatterbox Turbo 8-bit | Default | [Listen to Chatterbox 8-bit](Demo/chatterbox-turbo-8bit.wav) |
-| Chatterbox Turbo FP16 | Default | [Listen to Chatterbox FP16](Demo/chatterbox-turbo-fp16.wav) |
-| macOS `say` | System default | [Listen to macOS say](Demo/macos-say.wav) |
+### Kokoro 82M BF16 — Heart
 
-All six files use mono, 24 kHz, 16-bit PCM WAV. They use each engine's 1× speaking rate with no EQ, noise removal, loudness change, or other sound processing.
+https://github.com/user-attachments/assets/aebc31a9-c2ec-413a-ba23-ac689d3a35f5
+
+[Download the source WAV](Demo/kokoro-heart.wav)
+
+### Qwen3 CustomVoice 0.6B 8-bit — Ryan
+
+https://github.com/user-attachments/assets/e2ba72d3-bb37-45e8-9ce3-6146fa9e6368
+
+[Download the source WAV](Demo/qwen3-8bit-ryan.wav)
+
+### Qwen3 CustomVoice 0.6B BF16 — Ryan
+
+https://github.com/user-attachments/assets/7381935b-2cf4-4c70-a59e-20115a68c0f6
+
+[Download the source WAV](Demo/qwen3-bf16-ryan.wav)
+
+### Chatterbox Turbo 8-bit — Default
+
+https://github.com/user-attachments/assets/a1a65baa-8da0-4bba-b1e7-3c178240490f
+
+[Download the source WAV](Demo/chatterbox-turbo-8bit.wav)
+
+### Chatterbox Turbo FP16 — Default
+
+https://github.com/user-attachments/assets/64c39764-3687-4066-841a-30573d98d2dd
+
+[Download the source WAV](Demo/chatterbox-turbo-fp16.wav)
+
+### macOS `say` — System default
+
+https://github.com/user-attachments/assets/d7877aad-a4c7-4d4a-aa5c-750c3bad99c5
+
+[Download the source WAV](Demo/macos-say.wav)
+
+All six source files use mono, 24 kHz, 16-bit PCM WAV. The embedded players wrap each source in an MP4 title card for browser playback. They keep each engine's 1× speaking rate with no EQ, noise removal, loudness change, or other sound processing.
 
 ## What it includes
 
