@@ -6,9 +6,9 @@ ReadBack is a native macOS menu-bar app for reading back copied or streamed text
 
 ## Listen
 
-These samples use the full-precision model builds. Each reads the same plain text at 1×, with no style prompt or sound processing:
+These samples use the full-precision model builds. Each reads the first two sentences of Herman Melville's [*Moby-Dick*](https://www.gutenberg.org/files/2701/2701-h/2701-h.htm) at 1×, with no style prompt or sound processing:
 
-> ReadBack is a menu bar app for macOS. It turns copied text into speech and runs each voice model on your Mac.
+> Call me Ishmael. Some years ago—never mind how long precisely—having little or no money in my purse, and nothing particular to interest me on shore, I thought I would sail about a little and see the watery part of the world.
 
 | Model | Sample |
 | --- | --- |
