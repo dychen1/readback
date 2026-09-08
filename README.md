@@ -6,17 +6,38 @@ ReadBack is a native macOS menu-bar app for reading back copied or streamed text
 
 ## Listen
 
-These samples use the full-precision model builds. Each reads the first two sentences of Herman Melville's [*Moby-Dick*](https://www.gutenberg.org/files/2701/2701-h/2701-h.htm) at 1×, with no style prompt or sound processing:
+Compare three full-precision models reading the same opening of Herman Melville's [*Moby-Dick*](https://www.gutenberg.org/files/2701/2701-h/2701-h.htm) at 1×:
 
 > Call me Ishmael. Some years ago—never mind how long precisely—having little or no money in my purse, and nothing particular to interest me on shore, I thought I would sail about a little and see the watery part of the world.
 
-| Model | Sample |
-| --- | --- |
-| Kokoro 82M BF16 — Heart | [Play](Demo/kokoro-heart.wav?raw=1) |
-| Qwen3 CustomVoice 0.6B BF16 — Aiden | [Play](Demo/qwen3-bf16-aiden.wav?raw=1) |
-| Chatterbox Turbo FP16 — Default | [Play](Demo/chatterbox-turbo-fp16.wav?raw=1) |
+Press play, then unmute to hear. GitHub starts these embedded players muted.
 
-GitHub README pages do not support inline audio controls. Each compact link opens the WAV file in the browser. The files use mono, 24 kHz, 16-bit PCM.
+<table>
+<tr>
+<th width="33%">Kokoro 82M BF16<br>Michael</th>
+<th width="33%">Qwen3 CustomVoice 0.6B BF16<br>Aiden</th>
+<th width="33%">Chatterbox Turbo FP16<br>Default</th>
+</tr>
+<tr>
+<td width="33%">
+
+https://github.com/user-attachments/assets/23bbd1f6-e801-416d-bdfd-c9cb3fa3af7f
+
+</td>
+<td width="33%">
+
+https://github.com/user-attachments/assets/62b0afc6-c96a-4b68-ad47-717604e015d4
+
+</td>
+<td width="33%">
+
+https://github.com/user-attachments/assets/5a13293b-b407-41b0-801b-a250a5aa451a
+
+</td>
+</tr>
+</table>
+
+These demo takes use Michael for Kokoro, a restrained narration prompt for Qwen, and lower sampling temperature for Chatterbox. They use the native inference runtime with demo-specific settings, not the app's default settings.
 
 ## What it includes
 
