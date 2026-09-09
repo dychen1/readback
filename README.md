@@ -6,47 +6,38 @@ ReadBack is a native macOS menu-bar app for reading back copied or streamed text
 
 ## Listen
 
-Each sample reads the first two sentences of Herman Melville's [*Moby-Dick*](https://www.gutenberg.org/files/2701/2701-h/2701-h.htm) at 1×:
+Compare three full-precision models reading the same opening of Herman Melville's [*Moby-Dick*](https://www.gutenberg.org/files/2701/2701-h/2701-h.htm) at 1×:
 
 > Call me Ishmael. Some years ago—never mind how long precisely—having little or no money in my purse, and nothing particular to interest me on shore, I thought I would sail about a little and see the watery part of the world.
 
-### Kokoro 82M BF16 — Heart
+Press play, then unmute to hear. GitHub starts these embedded players muted.
 
-https://github.com/user-attachments/assets/aebc31a9-c2ec-413a-ba23-ac689d3a35f5
+<table>
+<tr>
+<th width="33%">Kokoro 82M BF16<br>Michael</th>
+<th width="33%">Qwen3 CustomVoice 0.6B BF16<br>Aiden</th>
+<th width="33%">Chatterbox Turbo FP16<br>Default</th>
+</tr>
+<tr>
+<td width="33%">
 
-[Download the source WAV](Demo/kokoro-heart.wav)
+https://github.com/user-attachments/assets/23bbd1f6-e801-416d-bdfd-c9cb3fa3af7f
 
-### Qwen3 CustomVoice 0.6B 8-bit — Ryan
+</td>
+<td width="33%">
 
-https://github.com/user-attachments/assets/e2ba72d3-bb37-45e8-9ce3-6146fa9e6368
+https://github.com/user-attachments/assets/62b0afc6-c96a-4b68-ad47-717604e015d4
 
-[Download the source WAV](Demo/qwen3-8bit-ryan.wav)
+</td>
+<td width="33%">
 
-### Qwen3 CustomVoice 0.6B BF16 — Ryan
+https://github.com/user-attachments/assets/5a13293b-b407-41b0-801b-a250a5aa451a
 
-https://github.com/user-attachments/assets/7381935b-2cf4-4c70-a59e-20115a68c0f6
+</td>
+</tr>
+</table>
 
-[Download the source WAV](Demo/qwen3-bf16-ryan.wav)
-
-### Chatterbox Turbo 8-bit — Default
-
-https://github.com/user-attachments/assets/a1a65baa-8da0-4bba-b1e7-3c178240490f
-
-[Download the source WAV](Demo/chatterbox-turbo-8bit.wav)
-
-### Chatterbox Turbo FP16 — Default
-
-https://github.com/user-attachments/assets/64c39764-3687-4066-841a-30573d98d2dd
-
-[Download the source WAV](Demo/chatterbox-turbo-fp16.wav)
-
-### macOS `say` — System default
-
-https://github.com/user-attachments/assets/d7877aad-a4c7-4d4a-aa5c-750c3bad99c5
-
-[Download the source WAV](Demo/macos-say.wav)
-
-All six source files use mono, 24 kHz, 16-bit PCM WAV. The embedded players wrap each source in an MP4 title card for browser playback. They keep each engine's 1× speaking rate with no EQ, noise removal, loudness change, or other sound processing.
+These demo takes use Michael for Kokoro, a restrained narration prompt for Qwen, and lower sampling temperature for Chatterbox. They use the native inference runtime with demo-specific settings, not the app's default settings.
 
 ## What it includes
 
