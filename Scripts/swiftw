@@ -24,7 +24,10 @@ shift
 
 case "${command_name}" in
     build|run)
+        # Match the .build/<configuration> layout used by packaging, and use
+        # our bundled Metal library instead of requiring the Metal compiler.
         exec swift "${command_name}" \
+            --build-system native \
             --disable-dependency-cache \
             --cache-path "${cache_dir}/swiftpm" \
             --config-path "${cache_dir}/config" \

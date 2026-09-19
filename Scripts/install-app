@@ -1,0 +1,69 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+script_dir="${0:A:h}"
+project_dir="${script_dir:h}"
+install_dir="${READBACK_INSTALL_DIR:-${HOME}/Applications}"
+open_after_install="${READBACK_OPEN_AFTER_INSTALL:-1}"
+destination="${install_dir}/ReadBack.app"
+
+if [[ "${open_after_install}" != 0 && "${open_after_install}" != 1 ]]; then
+    print -u2 "READBACK_OPEN_AFTER_INSTALL must be 0 or 1."
+    exit 1
+fi
+
+mkdir -p "${install_dir}"
+if [[ ! -w "${install_dir}" ]]; then
+    print -u2 "Cannot write to ${install_dir}. Use make install with its default ~/Applications location."
+    exit 1
+fi
+
+print "Building ReadBack. The first build downloads dependencies and voice models."
+READBACK_ALLOW_AD_HOC_SIGN=1 "${script_dir}/build-app"
+
+# Stage and verify before touching an existing installation. Keeping the staging
+# directory on the destination volume makes the final moves atomic.
+staging_dir="$(mktemp -d "${install_dir}/.readback-install.XXXXXX")"
+cleanup() {
+    # Preserve the backup if restoration failed; never discard the last good app.
+    if [[ -e "${staging_dir}/previous.app" || -L "${staging_dir}/previous.app" ]]; then
+        print -u2 "Previous app preserved at ${staging_dir}/previous.app"
+    else
+        rm -rf "${staging_dir}"
+    fi
+}
+trap cleanup EXIT
+
+ditto "${project_dir}/dist/ReadBack.app" "${staging_dir}/ReadBack.app"
+codesign --verify --deep --strict "${staging_dir}/ReadBack.app"
+
+if pgrep -x readback >/dev/null; then
+    print "Closing ReadBack before installing the update…"
+    osascript -e 'tell application id "ai.sanrin.readback" to quit'
+    for attempt in {1..50}; do
+        pgrep -x readback >/dev/null || break
+        sleep 0.1
+    done
+    if pgrep -x readback >/dev/null; then
+        print -u2 "ReadBack is still running. Quit it from the menu bar, then run make install again."
+        exit 1
+    fi
+fi
+
+if [[ -e "${destination}" || -L "${destination}" ]]; then
+    mv "${destination}" "${staging_dir}/previous.app"
+fi
+if ! mv "${staging_dir}/ReadBack.app" "${destination}"; then
+    if [[ -e "${staging_dir}/previous.app" || -L "${staging_dir}/previous.app" ]]; then
+        mv "${staging_dir}/previous.app" "${destination}"
+    fi
+    exit 1
+fi
+rm -rf "${staging_dir}/previous.app"
+
+print "Installed ${destination}"
+if [[ "${open_after_install}" == 1 ]]; then
+    open "${destination}"
+    print "ReadBack is in your menu bar. Copy text, then press Option-Command-R."
+fi
