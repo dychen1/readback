@@ -45,16 +45,29 @@ The [source recordings and generation notes](Assets/Demo/) are included in the r
 
 ## Install
 
-Release builds can ship as a self-contained DMG or Homebrew Cask. The app bundle contains the native runtime, MLX Metal library, Kokoro weights, and its included language files.
-
-To build from source:
+On an Apple Silicon Mac running macOS 14 or later, clone the repository and run:
 
 ```sh
-Scripts/build-app
-open dist/ReadBack.app
+git clone https://github.com/dychen1/readback.git
+cd readback
+make install
 ```
 
-The build needs a Swift 6.2 toolchain and network access the first time it resolves packages and release assets. The built app does not need those tools.
+`make install` downloads the required models, builds and locally signs the app, installs it in `~/Applications`, and opens it. No `sudo` or Apple Developer account is needed. ReadBack appears in the menu bar; copy text and press `Option-Command-R` to hear it.
+
+Building requires Swift 6.3 or later. If developer tools are missing, run `xcode-select --install`, finish the installation, then retry. If `swift --version` reports an older version, update your developer tools. The first build needs internet access and may take several minutes. Later builds reuse downloaded files. The installed app includes Kokoro, English, and French and works without the source checkout or build tools.
+
+To update, run `git pull --ff-only` and `make install` from your checkout. The installer closes the running app before replacing it and keeps your settings and downloaded models.
+
+Optional commands:
+
+```sh
+make build                              # Build without installing
+make install OPEN=0                     # Install without opening
+make install INSTALL_DIR=/Applications  # Use a different writable folder
+```
+
+These commands create a local build. Developer ID signing and notarization for distributed releases remain available through `Scripts/build-dmg`.
 
 ## Read copied text
 

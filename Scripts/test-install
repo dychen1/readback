@@ -1,0 +1,95 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+script_dir="${0:A:h}"
+fixture_dir="$(mktemp -d)"
+trap 'rm -rf "${fixture_dir}"' EXIT
+mkdir -p "${fixture_dir}/project/Scripts" "${fixture_dir}/bin"
+cp "${script_dir}/install-app" "${fixture_dir}/project/Scripts/"
+cp "${script_dir:h}/Makefile" "${fixture_dir}/project/"
+
+cat > "${fixture_dir}/project/Scripts/build-app" <<'BUILD'
+#!/bin/zsh
+set -eu
+[[ "${READBACK_ALLOW_AD_HOC_SIGN:-}" == 1 ]]
+[[ "${FAIL_BUILD:-0}" == 0 ]] || exit 1
+mkdir -p "${0:A:h:h}/dist/ReadBack.app/Contents/MacOS"
+print -r -- "new" > "${0:A:h:h}/dist/ReadBack.app/Contents/MacOS/readback"
+BUILD
+cat > "${fixture_dir}/bin/codesign" <<'SIGN'
+#!/bin/zsh
+[[ "${FAIL_VERIFY:-0}" == 0 ]]
+SIGN
+cat > "${fixture_dir}/bin/pgrep" <<'PROCESS'
+#!/bin/zsh
+[[ -e "${FIXTURE_DIR}/running" ]]
+PROCESS
+cat > "${fixture_dir}/bin/osascript" <<'QUIT'
+#!/bin/zsh
+[[ "${FAIL_QUIT:-0}" == 0 ]] || exit 1
+rm -f "${FIXTURE_DIR}/running"
+QUIT
+cat > "${fixture_dir}/bin/open" <<'OPEN'
+#!/bin/zsh
+print -r -- "$1" > "${FIXTURE_DIR}/opened"
+OPEN
+cat > "${fixture_dir}/bin/mv" <<'MOVE'
+#!/bin/zsh
+if [[ "${FAIL_REPLACE:-0}" == 1 && "$1" == */.readback-install.*/ReadBack.app ]]; then
+    exit 1
+fi
+exec /bin/mv "$@"
+MOVE
+chmod +x "${fixture_dir}/bin/"* "${fixture_dir}/project/Scripts/"*
+export FIXTURE_DIR="${fixture_dir}"
+export PATH="${fixture_dir}/bin:${PATH}"
+export READBACK_INSTALL_DIR="${fixture_dir}/My Applications"
+destination="${READBACK_INSTALL_DIR}/ReadBack.app"
+installer="${fixture_dir}/project/Scripts/install-app"
+
+fail() {
+    print -u2 "FAIL: $1"
+    exit 1
+}
+assert_app() {
+    [[ "$(cat "${destination}/Contents/MacOS/readback")" == "$1" ]] \
+        || fail "installed app should be $1"
+}
+
+# Run the documented Make entry point, with a destination containing spaces.
+make -s -C "${fixture_dir}/project" install INSTALL_DIR="${READBACK_INSTALL_DIR}" >/dev/null
+assert_app new
+[[ "$(cat "${fixture_dir}/opened")" == "${destination}" ]] || fail "did not open installed app"
+print "PASS first install and launch through make"
+
+print old > "${destination}/Contents/MacOS/readback"
+touch "${destination}/obsolete-file"
+for failure in FAIL_BUILD FAIL_VERIFY FAIL_REPLACE; do
+    if env "${failure}=1" "${installer}" >/dev/null 2>&1; then
+        fail "${failure} should stop installation"
+    fi
+    assert_app old
+    [[ -f "${destination}/obsolete-file" ]] || fail "failed update changed old bundle"
+done
+print "PASS build, signature, and replacement failures preserve existing app"
+
+touch "${fixture_dir}/running"
+if FAIL_QUIT=1 "${installer}" >/dev/null 2>&1; then
+    fail "failed quit should stop installation"
+fi
+assert_app old
+rm "${fixture_dir}/opened"
+READBACK_OPEN_AFTER_INSTALL=0 "${installer}" >/dev/null
+assert_app new
+[[ ! -e "${fixture_dir}/running" ]] || fail "running app was not closed"
+[[ ! -e "${destination}/obsolete-file" ]] || fail "update retained obsolete bundle files"
+[[ ! -e "${fixture_dir}/opened" ]] || fail "OPEN=0 launched app"
+[[ -z "$(find "${READBACK_INSTALL_DIR}" -name '.readback-install.*' -print)" ]] \
+    || fail "staging directories were left behind"
+print "PASS update closes app, replaces whole bundle, and honors OPEN=0"
+
+if READBACK_OPEN_AFTER_INSTALL=invalid "${installer}" >/dev/null 2>&1; then
+    fail "invalid open option should fail"
+fi
+print "PASS invalid option rejected"

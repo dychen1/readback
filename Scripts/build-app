@@ -15,6 +15,26 @@ languages_source="${assets_root}/Languages"
 codesign_identity="${READBACK_CODESIGN_IDENTITY:--}"
 mlx_metallib="${assets_root}/MLX/0.31.1/mlx.metallib"
 
+if [[ "$(uname -s)" != Darwin || "$(uname -m)" != arm64 ]]; then
+    print -u2 "ReadBack requires a Mac with Apple Silicon."
+    exit 1
+fi
+if (( ${$(sw_vers -productVersion)%%.*} < 14 )); then
+    print -u2 "ReadBack requires macOS 14 or later."
+    exit 1
+fi
+if ! xcrun --find swift >/dev/null 2>&1; then
+    print -u2 "Install Apple's Command Line Tools with xcode-select --install, then retry."
+    exit 1
+fi
+swift_version="$(swift --version 2>&1 | sed -nE 's/.*Swift version ([0-9]+)\.([0-9]+).*/\1 \2/p')"
+version_parts=(${=swift_version})
+if (( ${#version_parts} != 2 )) \
+    || (( version_parts[1] < 6 || (version_parts[1] == 6 && version_parts[2] < 3) )); then
+    print -u2 "ReadBack's dependencies require Swift 6.3 or later. Update Apple's developer tools, then retry."
+    exit 1
+fi
+
 if [[ "${codesign_identity}" == "-" && "${READBACK_ALLOW_AD_HOC_SIGN:-}" != "1" ]]; then
     print -u2 "READBACK_CODESIGN_IDENTITY is not set. This would produce an" \
         "ad-hoc-signed, non-hardened-runtime build unsuitable for release."
