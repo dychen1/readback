@@ -45,6 +45,13 @@ The [source recordings and generation notes](Assets/Demo/) are included in the r
 
 ## Install
 
+Pre-requisites:
+- Apple Silicon Mac — M1 or newer.
+- macOS 14 Sonoma or later.
+- Apple developer tools with Swift 6.3+ and `make`
+  - Install the tools with `xcode-select --install`.
+  - Check Swift with `swift --version`; update the tools if it’s older than 6.3.
+
 On an Apple Silicon Mac running macOS 14 or later, clone the repository and run:
 
 ```sh
@@ -54,20 +61,6 @@ make install
 ```
 
 `make install` downloads the required models, builds and locally signs the app, installs it in `~/Applications`, and opens it. No `sudo` or Apple Developer account is needed. ReadBack appears in the menu bar; copy text and press `Option-Command-R` to hear it.
-
-Building requires Swift 6.3 or later. If developer tools are missing, run `xcode-select --install`, finish the installation, then retry. If `swift --version` reports an older version, update your developer tools. The first build needs internet access and may take several minutes. Later builds reuse downloaded files. The installed app includes Kokoro, English, and French and works without the source checkout or build tools.
-
-To update, run `git pull --ff-only` and `make install` from your checkout. The installer closes the running app before replacing it and keeps your settings and downloaded models.
-
-Optional commands:
-
-```sh
-make build                              # Build without installing
-make install OPEN=0                     # Install without opening
-make install INSTALL_DIR=/Applications  # Use a different writable folder
-```
-
-These commands create a local build. Developer ID signing and notarization for distributed releases remain available through `Scripts/build-dmg`.
 
 ## Read copied text
 
@@ -146,6 +139,14 @@ printf 'Hello from ReadBack.' |
 For a build from source, the path is `dist/ReadBack.app/Contents/MacOS/voicepipe` instead. Symlink it onto your own `$PATH` if you want it available as a plain command.
 
 For a debug build:
+
+```sh
+make build                              # Build without installing
+make install OPEN=0                     # Install without opening
+make install INSTALL_DIR=/Applications  # Use a different writable folder
+```
+
+These commands create a local build. Developer ID signing and notarization for distributed releases remain available through `Scripts/build-dmg`.
 
 ```sh
 Scripts/swiftw build
