@@ -1,6 +1,7 @@
+# ReadBack
+
 ![ReadBack — a blue origami bird on layered blue and coral paper](Assets/readback-banner.png)
 
-# ReadBack
 
 ## Overview
 
