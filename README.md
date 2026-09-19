@@ -40,6 +40,8 @@ https://github.com/user-attachments/assets/5a13293b-b407-41b0-801b-a250a5aa451a
 
 These demo takes use Michael for Kokoro, a restrained narration prompt for Qwen, and lower sampling temperature for Chatterbox. They use the native inference runtime with demo-specific settings, not the app's default settings.
 
+The [source recordings and generation notes](Assets/Demo/) are included in the repository.
+
 
 ## Install
 
