@@ -31,13 +31,14 @@ let package = Package(
         ),
     ],
     targets: [
-        .target(name: "ReadBackCore"),
+        .target(name: "ReadBackCore", path: "Sources/Core"),
         .target(
             name: "ReadBackInference",
             dependencies: [
                 "ReadBackCore",
                 .product(name: "MLXAudioTTS", package: "mlx-audio-swift"),
-            ]
+            ],
+            path: "Sources/Inference"
         ),
         .target(
             name: "ReadBackService",
@@ -45,13 +46,15 @@ let package = Package(
                 "ReadBackCore",
                 .product(name: "Hummingbird", package: "hummingbird"),
                 .product(name: "HummingbirdWebSocket", package: "hummingbird-websocket"),
-            ]
+            ],
+            path: "Sources/Service"
         ),
-        .target(name: "ReadBackSkill"),
+        .target(name: "ReadBackSkill", path: "Sources/Skill"),
         .target(name: "VoicePipeKit", dependencies: ["ReadBackCore"]),
         .target(
             name: "ReadBackMac",
-            dependencies: ["VoicePipeKit"]
+            dependencies: ["VoicePipeKit"],
+            path: "Sources/Mac"
         ),
         .executableTarget(
             name: "ReadBackVoice",
@@ -62,6 +65,7 @@ let package = Package(
                 "ReadBackService",
                 "ReadBackSkill",
             ],
+            path: "Sources/Voice",
             // SwiftPM does not define DEBUG for the debug configuration on its own
             // (unlike Xcode); this target's #if DEBUG dev-convenience fallback
             // relies on it being defined explicitly here.
@@ -87,7 +91,8 @@ let package = Package(
                 "VoicePipeKit",
                 .product(name: "HummingbirdTesting", package: "hummingbird"),
                 .product(name: "HummingbirdWSTesting", package: "hummingbird-websocket"),
-            ]
+            ],
+            path: "Sources/Tests"
         ),
     ]
 )

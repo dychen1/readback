@@ -17,7 +17,7 @@ work_dir="$(mktemp -d)"
 trap 'rm -rf "${work_dir}"' EXIT
 
 # One entry per fetched file that has a known-good hash. The Kokoro model/voice
-# values mirror Sources/ReadBackCore/ModelCatalog.swift's KokoroDownloadAssets table
+# values mirror Sources/Core/ModelCatalog.swift's KokoroDownloadAssets table
 # so the two checks can never drift apart. Files with no entry here are downloaded
 # with a warning rather than blocked, since their hashes have not been pinned yet.
 typeset -A expected_sha256

@@ -219,7 +219,7 @@ models/**
 runtime/
 dist/
 *.wav
-!Demo/*.wav
+!Assets/Demo/*.wav
 *.pcm
 
 # Marimo
