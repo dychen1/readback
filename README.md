@@ -10,8 +10,6 @@ Compare three full-precision models reading the same opening of Herman Melville'
 
 > Call me Ishmael. Some years ago—never mind how long precisely—having little or no money in my purse, and nothing particular to interest me on shore, I thought I would sail about a little and see the watery part of the world.
 
-Press play, then unmute to hear. GitHub starts these embedded players muted.
-
 <table>
 <tr>
 <th width="33%">Kokoro 82M BF16<br>Michael</th>
@@ -39,19 +37,6 @@ https://github.com/user-attachments/assets/5a13293b-b407-41b0-801b-a250a5aa451a
 
 These demo takes use Michael for Kokoro, a restrained narration prompt for Qwen, and lower sampling temperature for Chatterbox. They use the native inference runtime with demo-specific settings, not the app's default settings.
 
-## What it includes
-
-- A Swift menu-bar app for model choice, voices, playback, and service state
-- Native MLX-Audio Swift inference in the app process
-- AVFoundation playback from memory
-- A loopback HTTP and WebSocket service on `127.0.0.1:51280`
-- `voicepipe`, a small command that speaks streamed standard input
-- Bundled Kokoro 82M BF16 with six English voices and one French voice
-- One-click Qwen3 CustomVoice 0.6B and Chatterbox Turbo installs in 8-bit and 16-bit forms
-- One-click installs for Japanese, Mandarin Chinese, Spanish, Hindi, Italian, and Brazilian Portuguese
-- One local MLX model slot for technical users
-
-ReadBack has no Python service, database, account, or telemetry code. It targets macOS 14 or later on Apple Silicon.
 
 ## Install
 
@@ -80,6 +65,36 @@ Copy up to 2,000 characters, then press `Option-Command-R` (`⌥⌘R`). Press th
 
 The menu-bar popover has the same Read Clipboard action.
 
+## Models and languages
+
+Kokoro is bundled, active by default. English and French work without another download. The Settings window offers these optional model installs:
+
+| Model | Approximate download |
+| --- | ---: |
+| Qwen3 CustomVoice 0.6B 8-bit | 1.65 GB |
+| Qwen3 CustomVoice 0.6B BF16 | 2.50 GB |
+| Chatterbox Turbo 8-bit | 708 MB |
+| Chatterbox Turbo FP16 | 2.99 GB |
+
+ReadBack stores settings per model. Switching back to a model restores its last voice and language. It keeps only one model loaded, then clears the old MLX cache during a switch.
+
+
+
+## What it includes
+
+- A Swift menu-bar app for model choice, voices, playback, and service state
+- Native MLX-Audio Swift inference in the app process
+- AVFoundation playback from memory
+- A loopback HTTP and WebSocket service on `127.0.0.1:51280`
+- `voicepipe`, a small command that speaks streamed standard input
+- Bundled Kokoro 82M BF16 with six English voices and one French voice
+- One-click Qwen3 CustomVoice 0.6B and Chatterbox Turbo installs in 8-bit and 16-bit forms
+- One-click installs for Japanese, Mandarin Chinese, Spanish, Hindi, Italian, and Brazilian Portuguese
+- One local MLX model slot for technical users
+
+It targets macOS 14 or later on Apple Silicon.
+
+
 ## App controls
 
 The popover provides:
@@ -92,22 +107,8 @@ The popover provides:
 - Start, stop, launch-at-login, and clipboard controls
 - A Settings window for model installs, removal, and local model registration
 
-Playback speed can change during active or paused speech without new synthesis. Before synthesis, ReadBack removes common Markdown markers while it keeps readable text and paragraph breaks.
+ReadBack removes common Markdown markers while it keeps readable text and paragraph breaks.
 
-## Models and languages
-
-Kokoro is bundled, active by default, and cannot be removed. English and French work without another download. The Settings window offers these optional model installs:
-
-| Model | Approximate download |
-| --- | ---: |
-| Qwen3 CustomVoice 0.6B 8-bit | 1.65 GB |
-| Qwen3 CustomVoice 0.6B BF16 | 2.50 GB |
-| Chatterbox Turbo 8-bit | 708 MB |
-| Chatterbox Turbo FP16 | 2.99 GB |
-
-Each choice uses the same curated controls for its model family. ReadBack downloads files from a pinned revision, checks each size and SHA-256 hash, publishes only a complete model, and clears its staging folder after a successful install. The Settings window uses the same process for optional Kokoro language files.
-
-ReadBack stores settings per model. Switching back to a model restores its last voice and language. It keeps only one model loaded, then clears the old MLX cache during a switch.
 
 ### Add a local model
 
@@ -189,25 +190,6 @@ Client events:
 
 Server event types include `session.ready`, `speech.queued`, `speech.started`, `speech.finished`, `playback.paused`, `playback.resumed`, `queue.paused`, `queue.resumed`, `session.finished`, and `error`.
 
-## How it works
-
-```text
-clipboard, voicepipe, or HTTP
-              |
-              v
-  local Hummingbird service
-              |
-              v
-     active ModelManager
-              |
-              v
-    MLX-Audio Swift model
-              |
-              v
- WAV bytes -> AVFoundation
-```
-
-`ModelManager` owns the curated catalog, verified installs, local bookmark, saved preferences, and the single loaded MLX session. `SpeechCoordinator` owns the playback queue. A shared activity gate stops model switches from racing with speech.
 
 ## Local files
 
@@ -226,27 +208,6 @@ ReadBack stores app data under:
 
 Model weights and generated app bundles are not tracked by Git.
 
-## Build and test
-
-```sh
-Scripts/swiftw build
-Scripts/swiftw run readback-tests
-Scripts/test-version
-Scripts/test-packaging-version
-```
-
-Build the app or DMG:
-
-```sh
-Scripts/build-app
-Scripts/build-dmg
-```
-
-To reuse release assets already stored elsewhere:
-
-```sh
-READBACK_RELEASE_ASSETS_DIR=/absolute/path/to/models Scripts/build-app
-```
 
 ## Privacy and limits
 
@@ -255,12 +216,6 @@ READBACK_RELEASE_ASSETS_DIR=/absolute/path/to/models Scripts/build-app
 - ReadBack supports one playback session and one loaded model at a time.
 - The local model slot supports known runtime profiles, not arbitrary code or repositories.
 - The app has no automatic updater yet.
-
-## Upstream projects
-
-ReadBack uses [MLX-Audio Swift](https://github.com/Blaizzy/mlx-audio-swift), [Kokoro](https://huggingface.co/mlx-community/Kokoro-82M-bf16), [Qwen3-TTS](https://huggingface.co/collections/mlx-community/qwen3-tts), [Chatterbox](https://huggingface.co/mlx-community/chatterbox-turbo-fp16), [Hummingbird](https://github.com/hummingbird-project/hummingbird), [Hummingbird WebSocket](https://github.com/hummingbird-project/hummingbird-websocket), [swift-websocket](https://github.com/hummingbird-project/swift-websocket), and Apple AVFoundation.
-
-Hummingbird WebSocket and swift-websocket are vendored under `Vendor/` rather than fetched from GitHub - see `Vendor/*/README.md` for each package's exact version and any local modification.
 
 ## License
 
