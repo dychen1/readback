@@ -88,6 +88,42 @@ private actor ManagerTestSession: MLXModelSession {
 
 func modelManagerTests() -> [TestCase] {
     [
+        TestCase(name: "model manager carries the rendered voice identity across a preference change") {
+            let fixture = try ModelManagerFixture()
+            defer { fixture.remove() }
+            await fixture.manager.warmConfiguredModel()
+            let request = SpeechRequest(input: "hold", voice: nil, languageCode: nil, speed: 1, format: .wav)
+            let manager = fixture.manager
+            let speech = Task { try await manager.synthesizeForReplay(request) }
+            await fixture.session.waitUntilSynthesisStarts()
+            try await fixture.manager.updatePreferences(ModelPreference(
+                modelID: .kokoro, voiceID: "am_michael", languageCode: "en", synthesisSpeed: 1
+            ))
+            let nextKey = try await fixture.manager.replayKey(for: request)
+            await fixture.session.unblock()
+            let result = try await speech.value
+            try expectEqual(result.key?.request.voice, "af_heart", "rendered voice retained in identity")
+            try expectEqual(nextKey?.request.voice, "am_michael", "next request uses new voice")
+            try expect(result.key != nextKey, "old audio must not satisfy the new preference")
+        },
+        TestCase(name: "model manager replay identity resolves preferences and changes after a model reload") {
+            let fixture = try ModelManagerFixture()
+            defer { fixture.remove() }
+            await fixture.manager.warmConfiguredModel()
+            let request = SpeechRequest(input: "hello", voice: nil, languageCode: nil, speed: 1, format: .wav)
+            let original = try await fixture.manager.replayKey(for: request)
+            try expect(original?.request.voice != nil, "default voice resolved into the key")
+            try expect(original?.request.languageCode != nil, "default language resolved into the key")
+            try await fixture.manager.updatePreferences(ModelPreference(
+                modelID: .kokoro, voiceID: "am_michael", languageCode: "en", synthesisSpeed: 1
+            ))
+            let changedVoice = try await fixture.manager.replayKey(for: request)
+            try expect(original != changedVoice, "same text with changed defaults misses the cache")
+            try await fixture.manager.activate(.fixture)
+            try await fixture.manager.activate(.kokoro)
+            let reloaded = try await fixture.manager.replayKey(for: request)
+            try expect(changedVoice?.modelGeneration != reloaded?.modelGeneration, "reloaded weights invalidate old audio")
+        },
         TestCase(name: "model manager warms the saved active model") {
             let fixture = try ModelManagerFixture()
             defer { fixture.remove() }

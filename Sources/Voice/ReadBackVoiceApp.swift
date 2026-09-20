@@ -355,6 +355,8 @@ final class ServiceController: ObservableObject {
     let modelManager: any ModelManaging
     private let api: ReadBackAPI
     private let player: AVFoundationAudioPlayer
+    let coordinator: SpeechCoordinator
+    private let clipboardMonitor: ClipboardChangeMonitor
     private let modelWarmup: BackgroundModelWarmup
     private let clipboardSpeaker: VoicePipeTextSpeaker
     private let clipboardAction: ClipboardReadBackAction
@@ -488,7 +490,7 @@ final class ServiceController: ObservableObject {
         let audioPlayer = AVFoundationAudioPlayer()
         audioPlayer.setPlaybackRate(configuration.playbackRate)
         player = audioPlayer
-        let coordinator = SpeechCoordinator(
+        coordinator = SpeechCoordinator(
             synthesizer: manager,
             player: audioPlayer,
             activityGate: activityGate
@@ -501,6 +503,9 @@ final class ServiceController: ObservableObject {
             coordinator: coordinator,
             speechSettings: settings
         )
+        clipboardMonitor = ClipboardChangeMonitor { [coordinator] in
+            await coordinator.invalidateReplayCache()
+        }
         let clipboardEndpoint = URL(
             string: "ws://\(configuration.publicHost):\(configuration.publicPort)/v1/readback/stream"
         )!
@@ -528,6 +533,7 @@ final class ServiceController: ObservableObject {
     }
 
     func launch() {
+        clipboardMonitor.start()
         start()
         Task { [modelWarmup] in
             await modelWarmup.start()
@@ -552,6 +558,7 @@ final class ServiceController: ObservableObject {
     }
 
     func stop() {
+        Task { await coordinator.invalidateReplayCache() }
         let requestID = clipboardRequestID
         clipboardTask?.cancel()
         clipboardTask = nil
@@ -635,6 +642,13 @@ final class ServiceController: ObservableObject {
     }
 
     func readClipboard() {
+        Task {
+            await clipboardMonitor.checkForChanges()
+            performClipboardAction()
+        }
+    }
+
+    private func performClipboardAction() {
         let text: String
         do {
             text = try clipboardAction.validatedText(from: SystemClipboardReader.readText())

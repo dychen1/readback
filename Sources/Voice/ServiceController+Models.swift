@@ -53,6 +53,11 @@ extension ServiceController {
     func observeModelUpdates() async {
         let updates = await modelManager.updates()
         for await snapshot in updates {
+            if snapshot.activeModelID != modelSnapshot.activeModelID
+                || snapshot.activePreferences != modelSnapshot.activePreferences
+            {
+                await coordinator.invalidateReplayCache()
+            }
             modelSnapshot = snapshot
             if let activeID = snapshot.activeModelID {
                 configuration.activeModelID = activeID

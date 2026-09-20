@@ -64,7 +64,7 @@ make install
 
 ## Read copied text
 
-Copy up to 2,000 characters, then press `Option-Command-R` (`⌥⌘R`). Press the same shortcut again to pause and once more to resume from the same audio position. If the clipboard changes, ReadBack stops the old speech and starts the new text from the beginning.
+Copy up to 2,000 characters, then press `Option-Command-R` (`⌥⌘R`). Press the same shortcut again to pause and once more to resume from the same audio position. After copying different text, press the shortcut to stop the old speech and start the new text from the beginning.
 
 | Current state | Clipboard | Shortcut action |
 | --- | --- | --- |
@@ -75,6 +75,16 @@ Copy up to 2,000 characters, then press `Option-Command-R` (`⌥⌘R`). Press th
 | Any active state | Changed text | Replace the current read-back |
 
 The menu-bar popover has the same Read Clipboard action.
+
+ReadBack keeps only the last completed reading for replay, with a 32 MiB limit
+for its text and audio. Clipboard changes clear that saved result without
+interrupting speech already playing. ReadBack checks for changes every 250 ms and
+before each clipboard read. Model, voice, and language changes also invalidate replay.
+Longer readings still play but are not saved. Replay stays in memory only.
+
+The speech engine keeps the model loaded, limits reusable GPU buffers to 64 MiB,
+and clears unused buffers after synthesis and under memory pressure. Quit releases
+the process's memory; closing the menu or settings window leaves ReadBack running.
 
 ## Models and languages
 
