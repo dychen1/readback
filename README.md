@@ -76,16 +76,6 @@ Copy up to 2,000 characters, then press `Option-Command-R` (`⌥⌘R`). Press th
 
 The menu-bar popover has the same Read Clipboard action.
 
-ReadBack keeps only the last completed reading for replay, with a 32 MiB limit
-for its text and audio. Clipboard changes clear that saved result without
-interrupting speech already playing. ReadBack checks for changes every 250 ms and
-before each clipboard read. Model, voice, and language changes also invalidate replay.
-Longer readings still play but are not saved. Replay stays in memory only.
-
-The speech engine keeps the model loaded, limits reusable GPU buffers to 64 MiB,
-and clears unused buffers after synthesis and under memory pressure. Quit releases
-the process's memory; closing the menu or settings window leaves ReadBack running.
-
 ## Models and languages
 
 Kokoro is bundled, active by default. English and French work without another download. The Settings window offers these optional model installs:
