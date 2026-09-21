@@ -72,7 +72,7 @@ func mlxSpeechModelSessionTests() -> [TestCase] {
     [
         TestCase(name: "MLX session unloads before another model loads") {
             let loader = FixtureMLXLoader()
-            let session = MLXSpeechModelSession(loader: loader, clearCache: {})
+            let session = MLXSpeechModelSession(loader: loader, clearCache: {}, configureMemory: {})
             let root = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
             defer { try? FileManager.default.removeItem(at: root) }
@@ -94,7 +94,7 @@ func mlxSpeechModelSessionTests() -> [TestCase] {
         },
         TestCase(name: "MLX session maps Kokoro language and speed") {
             let loader = FixtureMLXLoader()
-            let session = MLXSpeechModelSession(loader: loader, clearCache: {})
+            let session = MLXSpeechModelSession(loader: loader, clearCache: {}, configureMemory: {})
             let directory = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
             defer { try? FileManager.default.removeItem(at: directory) }
@@ -122,7 +122,7 @@ func mlxSpeechModelSessionTests() -> [TestCase] {
         },
         TestCase(name: "MLX session rejects empty generated audio") {
             let loader = FixtureMLXLoader(samples: [])
-            let session = MLXSpeechModelSession(loader: loader, clearCache: {})
+            let session = MLXSpeechModelSession(loader: loader, clearCache: {}, configureMemory: {})
             let directory = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
             defer { try? FileManager.default.removeItem(at: directory) }

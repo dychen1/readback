@@ -64,7 +64,7 @@ make install
 
 ## Read copied text
 
-Copy up to 2,000 characters, then press `Option-Command-R` (`⌥⌘R`). Press the same shortcut again to pause and once more to resume from the same audio position. If the clipboard changes, ReadBack stops the old speech and starts the new text from the beginning.
+Copy up to 2,000 characters, then press `Option-Command-R` (`⌥⌘R`). Press the same shortcut again to pause and once more to resume from the same audio position. After copying different text, press the shortcut to stop the old speech and start the new text from the beginning.
 
 | Current state | Clipboard | Shortcut action |
 | --- | --- | --- |

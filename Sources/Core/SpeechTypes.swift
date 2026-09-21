@@ -88,6 +88,17 @@ public struct AudioClip: Equatable, Sendable {
 
 public protocol SpeechSynthesizing: Sendable {
     func synthesize(_ request: SpeechRequest) async throws -> AudioClip
+    func replayKey(for request: SpeechRequest) async throws -> SpeechReplayKey?
+    func synthesizeForReplay(_ request: SpeechRequest) async throws -> ReplayableSpeech
+}
+
+public extension SpeechSynthesizing {
+    /// Synthesizers opt in only when they can identify all audio-affecting state.
+    func replayKey(for request: SpeechRequest) async throws -> SpeechReplayKey? { nil }
+
+    func synthesizeForReplay(_ request: SpeechRequest) async throws -> ReplayableSpeech {
+        ReplayableSpeech(clip: try await synthesize(request), key: nil)
+    }
 }
 
 public protocol SpeechModelRuntime: SpeechSynthesizing {

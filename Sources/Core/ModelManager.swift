@@ -151,6 +151,7 @@ public actor ModelManager: ModelManaging {
     private var runtimeState: ModelRuntimeState = .starting
     private var operation: ModelOperation = .idle
     private var inFlightGenerations = 0
+    private var modelGeneration: UInt64 = 0
     private var updateContinuations: [UUID: AsyncStream<ModelManagerSnapshot>.Continuation] = [:]
 
     public init(
@@ -207,13 +208,31 @@ public actor ModelManager: ModelManaging {
     }
 
     public func synthesize(_ request: SpeechRequest) async throws -> AudioClip {
+        try await synthesizeForReplay(request).clip
+    }
+
+    public func synthesizeForReplay(_ request: SpeechRequest) async throws -> ReplayableSpeech {
         guard operation == .idle, case .ready(let modelID) = runtimeState else {
             throw ModelManagerError.modelNotReady
         }
-        let resolved = try await resolvedRequest(request, for: modelID)
         inFlightGenerations += 1
         defer { inFlightGenerations -= 1 }
-        return try await session.synthesize(resolved)
+        let resolved = try await resolvedRequest(request, for: modelID)
+        let key = SpeechReplayKey(modelID: modelID, modelGeneration: modelGeneration, request: resolved)
+        // Carry the identity of the actual resolved request with its audio. A
+        // preference change during synthesis must not mislabel the saved clip.
+        return ReplayableSpeech(clip: try await session.synthesize(resolved), key: key)
+    }
+
+    public func replayKey(for request: SpeechRequest) async throws -> SpeechReplayKey? {
+        guard operation == .idle, case .ready(let modelID) = runtimeState else {
+            throw ModelManagerError.modelNotReady
+        }
+        return SpeechReplayKey(
+            modelID: modelID,
+            modelGeneration: modelGeneration,
+            request: try await resolvedRequest(request, for: modelID)
+        )
     }
 
     public func install(_ id: ModelID) async throws {
@@ -359,6 +378,7 @@ public actor ModelManager: ModelManaging {
     }
 
     private func loadAndWarm(_ id: ModelID) async throws {
+        modelGeneration &+= 1
         runtimeState = .loading(id)
         let location = try await library.location(for: id)
         let profile = try await library.runtimeProfile(for: id)

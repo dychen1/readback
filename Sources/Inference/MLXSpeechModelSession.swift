@@ -11,13 +11,16 @@ public enum MLXSpeechModelSessionError: Error, Equatable, Sendable {
 public actor MLXSpeechModelSession: MLXModelSession, ModelDirectoryValidating {
     private let registry: any SpeechRuntimeRegistry
     private let fileManager: FileManager
+    private let configureMemory: @Sendable () -> Void
+    private let clearCache: @Sendable () -> Void
     private var adapter: (any SpeechRuntimeAdapter)?
 
     public init(
         loader: any MLXSpeechModelLoading = DefaultMLXSpeechModelLoader(),
         languageResourceRoots: [URL] = [],
         fileManager: FileManager = .default,
-        clearCache: @escaping @Sendable () -> Void = { Memory.clearCache() }
+        clearCache: @escaping @Sendable () -> Void = { Memory.clearCache() },
+        configureMemory: @escaping @Sendable () -> Void = { SpeechMemoryPolicy.configure() }
     ) {
         registry = DefaultSpeechRuntimeRegistry(
             loader: loader,
@@ -26,17 +29,25 @@ public actor MLXSpeechModelSession: MLXModelSession, ModelDirectoryValidating {
             clearCache: clearCache
         )
         self.fileManager = fileManager
+        self.configureMemory = configureMemory
+        self.clearCache = clearCache
     }
 
     public init(
         registry: any SpeechRuntimeRegistry,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        clearCache: @escaping @Sendable () -> Void = { Memory.clearCache() },
+        configureMemory: @escaping @Sendable () -> Void = { SpeechMemoryPolicy.configure() }
     ) {
         self.registry = registry
         self.fileManager = fileManager
+        self.configureMemory = configureMemory
+        self.clearCache = clearCache
     }
 
     public func load(from directory: URL, profile: MLXRuntimeProfile) async throws {
+        configureMemory()
+        defer { clearCache() }
         await unload()
         guard fileManager.fileExists(atPath: directory.path) else {
             throw MLXSpeechModelSessionError.modelDirectoryMissing(directory)
@@ -55,6 +66,8 @@ public actor MLXSpeechModelSession: MLXModelSession, ModelDirectoryValidating {
     }
 
     public func synthesize(_ request: SpeechRequest) async throws -> AudioClip {
+        defer { clearCache() }
+        try Task.checkCancellation()
         guard let adapter else {
             throw MLXSpeechModelSessionError.modelNotLoaded
         }
@@ -71,8 +84,10 @@ public actor MLXSpeechModelSession: MLXModelSession, ModelDirectoryValidating {
         )
         var samples: [Float] = []
         for try await chunk in stream {
+            try Task.checkCancellation()
             samples.append(contentsOf: chunk)
         }
+        try Task.checkCancellation()
         guard !samples.isEmpty else {
             throw MLXSpeechModelSessionError.noAudioGenerated
         }

@@ -1,4 +1,5 @@
 import Foundation
+import MLX
 import MLXAudioTTS
 import ReadBackCore
 
@@ -19,6 +20,8 @@ public actor KokoroSpeechSynthesizer: SpeechModelRuntime {
 
     public func prepare() async throws {
         guard model == nil else { return }
+        SpeechMemoryPolicy.configure()
+        defer { Memory.clearCache() }
         guard FileManager.default.fileExists(atPath: modelDirectoryURL.path) else {
             throw KokoroSpeechSynthesizerError.modelDirectoryMissing(modelDirectoryURL)
         }
@@ -31,6 +34,8 @@ public actor KokoroSpeechSynthesizer: SpeechModelRuntime {
     }
 
     public func synthesize(_ request: SpeechRequest) async throws -> AudioClip {
+        defer { Memory.clearCache() }
+        try Task.checkCancellation()
         try await prepare()
         try LanguageResourceStager(roots: languageResourceRoots).stage()
         guard let model else {
@@ -50,8 +55,10 @@ public actor KokoroSpeechSynthesizer: SpeechModelRuntime {
         )
         var samples: [Float] = []
         for try await chunk in stream {
+            try Task.checkCancellation()
             samples.append(contentsOf: chunk)
         }
+        try Task.checkCancellation()
         guard !samples.isEmpty else {
             throw KokoroSpeechSynthesizerError.noAudioGenerated
         }

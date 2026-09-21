@@ -43,18 +43,22 @@ public actor SpeechCoordinator {
     private var worker: Task<Void, Never>?
     private var completionWaiters: [CheckedContinuation<Void, Never>] = []
     private var pauseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var replayCache: SpeechReplayCache
+    private var replayRecordingID: UUID?
 
     public init(
         synthesizer: any SpeechSynthesizing,
         player: any AudioPlaying,
         activityGate: ReadBackActivityGate? = nil,
-        maximumPendingCharacters: Int = 2_000
+        maximumPendingCharacters: Int = 2_000,
+        replayCache: SpeechReplayCache = SpeechReplayCache()
     ) {
         precondition(maximumPendingCharacters > 0)
         self.synthesizer = synthesizer
         self.player = player
         self.activityGate = activityGate
         self.maximumPendingCharacters = maximumPendingCharacters
+        self.replayCache = replayCache
     }
 
     public var hasActiveSession: Bool {
@@ -84,7 +88,13 @@ public actor SpeechCoordinator {
         inputFinished = false
         queuePaused = false
         playbackPaused = false
+        replayRecordingID = replayCache.beginRecording()
         await events(ReadBackServerEvent(type: .sessionReady, sessionID: id))
+    }
+
+    /// Drops saved and pending replay data without stopping active playback.
+    public func invalidateReplayCache() {
+        replayCache.invalidate()
     }
 
     @discardableResult
@@ -155,6 +165,8 @@ public actor SpeechCoordinator {
         }
         let sink = eventSink
         isEndingSession = true
+        if let replayRecordingID { replayCache.abort(recordingID: replayRecordingID) }
+        replayRecordingID = nil
         sessionGeneration += 1
         worker?.cancel()
         worker = nil
@@ -212,6 +224,8 @@ public actor SpeechCoordinator {
     }
 
     private func processQueue(sessionID expectedSessionID: String) async {
+        let generation = sessionGeneration
+        let recordingID = replayRecordingID
         while !Task.isCancelled {
             await waitUntilResumed()
             guard sessionID == expectedSessionID, let sink = eventSink else {
@@ -243,21 +257,36 @@ public actor SpeechCoordinator {
             )
 
             do {
-                let clip = try await synthesizer.synthesize(
-                    SpeechRequest(
-                        input: segment.text,
-                        voice: segment.voice,
-                        languageCode: segment.languageCode,
-                        speed: segment.speed,
-                        format: .wav
-                    )
+                let request = SpeechRequest(
+                    input: segment.text,
+                    voice: segment.voice,
+                    languageCode: segment.languageCode,
+                    speed: segment.speed,
+                    format: .wav
                 )
+                let key = try await synthesizer.replayKey(for: request)
+                try Task.checkCancellation()
+                guard sessionID == expectedSessionID, sessionGeneration == generation else { return }
+                let speech: ReplayableSpeech
+                if let key, let cached = replayCache.clip(at: segment.sequence, matching: key) {
+                    speech = ReplayableSpeech(clip: cached, key: key)
+                } else {
+                    speech = try await synthesizer.synthesizeForReplay(request)
+                }
                 try Task.checkCancellation()
                 await waitUntilResumed()
                 try Task.checkCancellation()
-                guard sessionID == expectedSessionID else { return }
-                try await player.play(clip)
+                guard sessionID == expectedSessionID, sessionGeneration == generation else { return }
+                try await player.play(speech.clip)
                 try Task.checkCancellation()
+                guard sessionID == expectedSessionID, sessionGeneration == generation else { return }
+                if let recordingID {
+                    if let key = speech.key {
+                        replayCache.record(speech.clip, key: key, recordingID: recordingID)
+                    } else {
+                        replayCache.abort(recordingID: recordingID)
+                    }
+                }
                 pendingCharacters -= segment.text.count
                 await sink(
                     ReadBackServerEvent(
@@ -273,6 +302,8 @@ public actor SpeechCoordinator {
             } catch is CancellationError {
                 return
             } catch {
+                guard sessionID == expectedSessionID, sessionGeneration == generation else { return }
+                if let recordingID { replayCache.abort(recordingID: recordingID) }
                 pendingCharacters -= segment.text.count
                 await sink(
                     ReadBackServerEvent(
@@ -293,6 +324,8 @@ public actor SpeechCoordinator {
         let sink = eventSink
         let generation = sessionGeneration
         isEndingSession = true
+        if let replayRecordingID { replayCache.complete(recordingID: replayRecordingID) }
+        replayRecordingID = nil
         worker = nil
         playbackPaused = false
         resumePauseWaiters()
