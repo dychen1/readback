@@ -43,7 +43,7 @@ extension ServiceController {
     }
 
     var canChangeModel: Bool {
-        clipboardPlaybackState == .idle && modelSnapshot.operation == .idle
+        clipboardPlaybackState == .idle && !isReading && modelSnapshot.operation == .idle
     }
 
     var canChangeVoice: Bool {

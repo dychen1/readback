@@ -50,10 +50,24 @@ public struct VoicePipeArguments: Equatable, Sendable {
     }
 }
 
-public enum VoicePipeError: Error, Sendable {
+public enum VoicePipeError: LocalizedError, Equatable, Sendable {
     case invalidServerMessage
     case server(String)
     case disconnected
+    /// A newer reading, from any app or agent, replaced this one.
+    case interrupted
+    /// The reading was stopped from ReadBack before it finished.
+    case stopped
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidServerMessage: "ReadBack sent a message this client does not understand."
+        case .server(let message): "ReadBack reported an error: \(message)"
+        case .disconnected: "The connection to ReadBack closed unexpectedly."
+        case .interrupted: "A newer reading replaced this one."
+        case .stopped: "The reading was stopped in ReadBack."
+        }
+    }
 }
 
 public actor VoicePipeClient {
@@ -72,6 +86,7 @@ public actor VoicePipeClient {
     private var isPaused = false
     private var receiverTerminated = false
     private var serverError: String?
+    private var endReason: ReadBackServerEvent.EndReason?
 
     public init(
         endpoint: URL,
@@ -103,6 +118,7 @@ public actor VoicePipeClient {
 
     public func append(_ text: String) async throws {
         guard !text.isEmpty else { return }
+        try requireUnfinished()
         try await send(.textAppend(text))
         idleCommit?.cancel()
         idleCommit = Task { [weak self, idleDelay] in
@@ -115,6 +131,7 @@ public actor VoicePipeClient {
 
     public func finish() async throws {
         idleCommit?.cancel()
+        try requireCompleted()
         try await send(.inputDone)
         try requireLiveReceiver(unlessFinished: true)
         if !isFinished {
@@ -125,6 +142,7 @@ public actor VoicePipeClient {
         }
         await socket.close()
         _ = try? await receiver?.value
+        try requireCompleted()
     }
 
     public func cancel() async {
@@ -185,6 +203,7 @@ public actor VoicePipeClient {
                     resume(&readyWaiters)
                 case .sessionFinished:
                     isFinished = true
+                    endReason = event.reason
                     receiverTerminated = true
                     resume(&readyWaiters)
                     resume(&finishedWaiters)
@@ -211,6 +230,20 @@ public actor VoicePipeClient {
             resume(&pausedWaiters)
             resume(&resumedWaiters)
             throw error
+        }
+    }
+
+    private func requireUnfinished() throws {
+        guard isFinished else { return }
+        try requireCompleted()
+        throw VoicePipeError.disconnected
+    }
+
+    private func requireCompleted() throws {
+        switch endReason {
+        case .interrupted: throw VoicePipeError.interrupted
+        case .stopped: throw VoicePipeError.stopped
+        case .completed, .failed, nil: return
         }
     }
 

@@ -83,9 +83,9 @@ func speechReplayCacheTests() -> [TestCase] {
             let synth = ReplayTestSynthesizer()
             let player = ReplayTestPlayer(blockFirst: true)
             let coordinator = SpeechCoordinator(synthesizer: synth, player: player)
-            try await coordinator.startSession(id: "active") { _ in }
-            _ = try await coordinator.enqueue(text: "one", voice: "af_heart", speed: 1)
-            await coordinator.finishInput()
+            try await coordinator.replaceSession(id: "active") { _ in }
+            _ = try await coordinator.enqueue(sessionID: "active", text: "one", voice: "af_heart", speed: 1)
+            await coordinator.finishInput(sessionID: "active")
             await player.waitUntilPlaying()
             await coordinator.invalidateReplayCache()
             let stops = await player.stopCount
@@ -94,9 +94,9 @@ func speechReplayCacheTests() -> [TestCase] {
             try expect(active, "active reading continues")
             await player.release()
             await coordinator.waitUntilFinished(sessionID: "active")
-            try await coordinator.startSession(id: "repeated") { _ in }
-            _ = try await coordinator.enqueue(text: "one", voice: "af_heart", speed: 1)
-            await coordinator.finishInput()
+            try await coordinator.replaceSession(id: "repeated") { _ in }
+            _ = try await coordinator.enqueue(sessionID: "repeated", text: "one", voice: "af_heart", speed: 1)
+            await coordinator.finishInput(sessionID: "repeated")
             await coordinator.waitUntilFinished(sessionID: "repeated")
             let calls = await synth.callCount
             try expectEqual(calls, 2, "late completion did not restore invalidated audio")
@@ -113,10 +113,10 @@ func speechReplayCacheTests() -> [TestCase] {
 }
 
 private func readReplayFixture(_ coordinator: SpeechCoordinator, id: String) async throws {
-    try await coordinator.startSession(id: id) { _ in }
-    _ = try await coordinator.enqueue(text: "one", voice: "af_heart", speed: 1)
-    _ = try await coordinator.enqueue(text: "two", voice: "af_heart", speed: 1)
-    await coordinator.finishInput()
+    try await coordinator.replaceSession(id: id) { _ in }
+    _ = try await coordinator.enqueue(sessionID: id, text: "one", voice: "af_heart", speed: 1)
+    _ = try await coordinator.enqueue(sessionID: id, text: "two", voice: "af_heart", speed: 1)
+    await coordinator.finishInput(sessionID: id)
     await coordinator.waitUntilFinished(sessionID: id)
 }
 

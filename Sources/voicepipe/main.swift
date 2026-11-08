@@ -23,7 +23,7 @@ enum VoicePipeCommand {
             }
             try await client.finish()
         } catch {
-            FileHandle.standardError.write(Data("voicepipe: \(error)\n".utf8))
+            FileHandle.standardError.write(Data("voicepipe: \(error.localizedDescription)\n".utf8))
             Foundation.exit(1)
         }
     }

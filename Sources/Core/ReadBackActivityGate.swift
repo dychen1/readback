@@ -17,8 +17,10 @@ public actor ReadBackActivityGate {
 
     public func currentState() -> State { state }
 
-    public func beginSpeech(sessionID: String) throws {
-        guard state == .idle else { throw ReadBackActivityGateError.busy }
+    /// Gives speech to `sessionID`, taking over from any current speech session.
+    /// Only a model switch blocks it.
+    public func claimSpeech(sessionID: String) throws {
+        guard state != .modelSwitch else { throw ReadBackActivityGateError.busy }
         state = .speech(sessionID: sessionID)
     }
 

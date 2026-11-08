@@ -65,6 +65,8 @@ enum ReadBackTestRunner {
             + serviceHealthTests()
             + readBackAPITests()
             + readBackWebSocketTests()
+            + mcpEndpointTests()
+            + mcpServerSetupTests()
             + runtimePathsTests()
             + singleInstanceLockTests()
         let filter = ProcessInfo.processInfo.environment["READBACK_TEST_FILTER"]

@@ -115,6 +115,34 @@ func voicePipeTests() -> [TestCase] {
                 "override endpoint"
             )
         },
+        TestCase(name: "voicepipe reports a reading replaced or stopped by ReadBack") {
+            for (reason, expected) in [
+                (ReadBackServerEvent.EndReason.interrupted, VoicePipeError.interrupted),
+                (.stopped, .stopped),
+            ] {
+                let socket = ControlledVoicePipeSocket()
+                try await socket.enqueue(ReadBackServerEvent(type: .sessionReady, sessionID: "old"))
+                let client = VoicePipeClient(socket: socket)
+                try await client.connect()
+                try await socket.enqueue(
+                    ReadBackServerEvent(type: .sessionFinished, sessionID: "old", reason: reason)
+                )
+                try await wait(for: .milliseconds(20))
+
+                do {
+                    try await client.append("More text")
+                    throw TestFailure(description: "append after \(reason) must fail")
+                } catch let error as VoicePipeError {
+                    try expectEqual(error, expected, "append error after \(reason)")
+                }
+                do {
+                    try await client.finish()
+                    throw TestFailure(description: "finish after \(reason) must fail")
+                } catch let error as VoicePipeError {
+                    try expectEqual(error, expected, "finish error after \(reason)")
+                }
+            }
+        },
         TestCase(name: "voicepipe cancellation waits for the server session to finish") {
             let socket = ControlledVoicePipeSocket()
             try await socket.enqueue(
