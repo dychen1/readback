@@ -72,6 +72,7 @@ enum ReadBackTestRunner {
             + historyStoreTests()
             + historyRecorderTests()
             + historyRecordingAPITests()
+            + historyListModelTests()
         let filter = ProcessInfo.processInfo.environment["READBACK_TEST_FILTER"]
         let selectedTests = filter.map { needle in
             tests.filter { $0.name.localizedCaseInsensitiveContains(needle) }

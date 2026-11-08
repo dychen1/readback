@@ -47,6 +47,11 @@ struct ReadBackApp: App {
             ModelManagerView(controller: controller)
                 .frame(minWidth: 460, minHeight: 360)
         }
+
+        Window("History", id: "history") {
+            HistoryPlaceholderView(model: controller.historyList)
+                .frame(minWidth: 420, minHeight: 320)
+        }
     }
 }
 
@@ -313,6 +318,11 @@ struct ReadBackPopover: View {
             )
             .foregroundStyle(controller.modelInstalled ? Color.secondary : Color.orange)
 
+            Button("History…") {
+                openWindow(id: "history")
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            }
+
             HStack {
                 Toggle("Launch at login", isOn: Binding(
                     get: { controller.launchAtLogin },
@@ -384,6 +394,9 @@ final class ServiceController: ObservableObject {
     let skillInstaller: ReadBackSkillInstaller
     let mcpClients: MCPClientRegistry
     let historyRecorder: HistoryRecorder
+    private(set) lazy var historyList = HistoryListModel(store: historyRecorder.store) { [weak self] entry in
+        self?.replayFromHistory(entry)
+    }
     private var serviceTask: Task<Void, Never>?
     private var clipboardTask: Task<Void, Never>?
     private var clipboardRequestID: UUID?
