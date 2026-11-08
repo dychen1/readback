@@ -19,8 +19,22 @@ func readBackSkillPresentationTests() -> [TestCase] {
             try expectEqual(presentation.action, .remove, "installed action")
             try expectEqual(
                 presentation.status,
-                "Installed for ChatGPT and Codex, Claude Code",
+                "Installed for ChatGPT and Codex, Claude Code, Cursor",
                 "installed status"
+            )
+        },
+        TestCase(name: "skill presentation names hosts still to link") {
+            let presentation = ReadBackSkillPresentation(
+                snapshot: ReadBackSkillInstallSnapshot(
+                    state: .notInstalled,
+                    installedHosts: [.openAI, .claudeCode]
+                )
+            )
+            try expectEqual(presentation.action, .install, "partial install action")
+            try expectEqual(
+                presentation.status,
+                "Installed for ChatGPT and Codex, Claude Code. Install to add Cursor.",
+                "partial install status"
             )
         },
         TestCase(name: "skill presentation offers update for an older package") {

@@ -43,6 +43,30 @@ extension ServiceController {
         }
     }
 
+    /// Brings a ReadBack-owned skill install up to the bundled version.
+    func updateInstalledReadBackSkill() {
+        guard !isChangingReadBackSkill else { return }
+        isChangingReadBackSkill = true
+        let installer = skillInstaller
+        Task { [weak self] in
+            let result = await Task.detached {
+                Result { try installer.updateInstalledPackageIfNeeded() }
+            }.value
+            guard let self else { return }
+            skillInstallSnapshot = (try? installer.snapshot())
+                ?? ReadBackSkillInstallSnapshot(state: .unavailable)
+            isChangingReadBackSkill = false
+            switch result {
+            case .success(true):
+                status = "ReadBack skill updated"
+            case .success(false):
+                break
+            case .failure(let error):
+                status = "Could not update the ReadBack skill: \(error.localizedDescription)"
+            }
+        }
+    }
+
     func removeReadBackSkill() {
         guard !isChangingReadBackSkill else { return }
         isChangingReadBackSkill = true

@@ -35,17 +35,26 @@ Remove Markdown marks, raw citation syntax, repeated headings, visual layout cue
 
 ## Play the brief
 
-Send the adapted brief through standard input to:
+Send only the adapted brief, never the original answer. Use the first channel this host supports:
+
+1. **ReadBack MCP tool (preferred).** If a `play` tool from the `readback` MCP server is available, such as `mcp__readback__play`, call it with the brief as `text`. It returns once playback starts. Reply only with “Reading it aloud.”
+2. **Standard input.** Otherwise, if the host gives subprocesses an interactive standard-input channel, send the brief through it to the client below with no arguments. After the client exits, reply only with “Read-back complete.”
+3. **File handoff (discouraged).** Only if the host can run nothing but command strings:
+   1. Resolve `$TMPDIR` to an absolute path. It is private to the user.
+   2. Write the brief once with the host's file-writing tool, not a shell command, to `<TMPDIR>/readback-brief-<random>.txt`. Do not rewrite or append to it.
+   3. Run the client with standard input redirected from that file. The command string contains only the path, never the brief.
+   4. Delete the file whether the client succeeded or failed.
+   5. Reply “Read-back complete.” and tell the user once that connecting ReadBack's MCP server in ReadBack Settings, under Agent Read-Back, makes read-back faster.
 
 ```text
 $HOME/Library/Application Support/ReadBack/Skills/readback/scripts/readback-skill-client
 ```
 
-Pass no arguments. Do not send the original answer. Do not use a temporary file, clipboard, environment variable, model option, voice option, speed option, or endpoint option.
+If the host has none of these channels, state that read-back is unavailable in this host and stop.
 
-Use the host's interactive standard-input channel. If the host has no interactive standard-input channel available for a subprocess, state that read-back is unavailable in this host and stop. Do not compose a shell command string containing the brief — a here-document or quoted argument can be broken out of by content in the brief that happens to match its delimiter or quoting.
+Never compose a shell command string containing the brief — a here-document or quoted argument can be broken out of by content in the brief that happens to match its delimiter or quoting. Do not use the clipboard, an environment variable, a model option, a voice option, a speed option, or an endpoint option.
 
-After the client exits, reply only with “Read-back complete.” On failure, give the shortest actionable fix without repeating the brief.
+On failure, give the shortest actionable fix without repeating the brief.
 
 ## Example
 

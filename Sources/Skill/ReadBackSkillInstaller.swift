@@ -3,11 +3,13 @@ import Foundation
 public enum ReadBackSkillHost: String, CaseIterable, Codable, Hashable, Sendable {
     case openAI
     case claudeCode
+    case cursor
 
     public var displayName: String {
         switch self {
         case .openAI: "ChatGPT and Codex"
         case .claudeCode: "Claude Code"
+        case .cursor: "Cursor"
         }
     }
 }
@@ -173,6 +175,25 @@ public struct ReadBackSkillInstaller: @unchecked Sendable {
         }
     }
 
+    /// Replaces the managed package with the bundled one when ReadBack owns the
+    /// installed package and its version differs. Host folders are never touched:
+    /// linked hosts see the update through their links, and a conflicting folder stays
+    /// as it is. Returns whether the package was updated.
+    @discardableResult
+    public func updateInstalledPackageIfNeeded() throws -> Bool {
+        guard packageIsComplete(at: sourceURL),
+              let sourceManifest = try? manifest(at: sourceURL),
+              sourceManifest.isOwnedByReadBack,
+              itemExists(at: managedURL),
+              let installedManifest = try? manifest(at: managedURL),
+              installedManifest.isOwnedByReadBack,
+              installedManifest.skillVersion != sourceManifest.skillVersion
+                || !packageIsComplete(at: managedURL)
+        else { return false }
+        try publishManagedPackage()
+        return true
+    }
+
     public func remove() throws {
         for host in ReadBackSkillHost.allCases {
             guard let hostURL = hostURLs[host], isOwnedHostLink(at: hostURL) else { continue }
@@ -234,7 +255,7 @@ public struct ReadBackSkillInstaller: @unchecked Sendable {
         } else {
             destinationURL = url.deletingLastPathComponent().appendingPathComponent(destination)
         }
-        return destinationURL.standardizedFileURL == managedURL
+        return destinationURL.standardizedFileURL.path == managedURL.path
     }
 
     private func manifest(at packageURL: URL) throws -> Manifest {

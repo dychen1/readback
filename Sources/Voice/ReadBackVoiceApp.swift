@@ -429,6 +429,10 @@ final class ServiceController: ObservableObject {
                     ".claude/skills/readback",
                     isDirectory: true
                 ),
+                .cursor: homeURL.appendingPathComponent(
+                    ".cursor/skills/readback",
+                    isDirectory: true
+                ),
             ]
         )
         skillInstaller = installer
@@ -577,6 +581,7 @@ final class ServiceController: ObservableObject {
         Task { [modelWarmup] in
             await modelWarmup.start()
         }
+        updateInstalledReadBackSkill()
     }
 
     func stopReading() {
