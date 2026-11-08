@@ -41,9 +41,18 @@ Send the adapted brief through standard input to:
 $HOME/Library/Application Support/ReadBack/Skills/readback/scripts/readback-skill-client
 ```
 
-Pass no arguments. Do not send the original answer. Do not use a temporary file, clipboard, environment variable, model option, voice option, speed option, or endpoint option.
+Pass no arguments. Do not send the original answer. Do not use the clipboard, an environment variable, a model option, a voice option, a speed option, or an endpoint option.
 
-Use the host's interactive standard-input channel. If the host has no interactive standard-input channel available for a subprocess, state that read-back is unavailable in this host and stop. Do not compose a shell command string containing the brief — a here-document or quoted argument can be broken out of by content in the brief that happens to match its delimiter or quoting.
+Never compose a shell command string containing the brief — a here-document or quoted argument can be broken out of by content in the brief that happens to match its delimiter or quoting.
+
+Use the host's interactive standard-input channel when available. If the host can only run command strings, hand the brief over through a file instead:
+
+1. Resolve `$TMPDIR` to an absolute path. It is private to the user.
+2. Write the brief with the host's file-writing tool, not a shell command, to `<TMPDIR>/readback-brief-<random>.txt`.
+3. Run the client with standard input redirected from that file. The command string contains only the path, never the brief.
+4. Delete the file whether the client succeeded or failed.
+
+If the host has neither channel, state that read-back is unavailable in this host and stop.
 
 After the client exits, reply only with “Read-back complete.” On failure, give the shortest actionable fix without repeating the brief.
 
