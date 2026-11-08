@@ -78,7 +78,10 @@ struct ReadBackMCPTools: Sendable {
             }
             let id: String
             do {
-                id = try await reader.start(ReadingRequest(text: text))
+                id = try await reader.start(
+                    ReadingRequest(text: text),
+                    historySource: .agent(host: nil)
+                )
             } catch {
                 return Self.result(error.message, isError: true)
             }

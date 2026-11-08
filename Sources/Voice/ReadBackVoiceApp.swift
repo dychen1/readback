@@ -383,6 +383,7 @@ final class ServiceController: ObservableObject {
     private let speechSettings: SpeechSettingsStore
     let skillInstaller: ReadBackSkillInstaller
     let mcpClients: MCPClientRegistry
+    let historyRecorder: HistoryRecorder
     private var serviceTask: Task<Void, Never>?
     private var clipboardTask: Task<Void, Never>?
     private var clipboardRequestID: UUID?
@@ -526,6 +527,8 @@ final class ServiceController: ObservableObject {
             storeURL: paths.supportDirectory.appendingPathComponent("mcp-clients.json")
         )
         mcpClients = clients
+        let history = HistoryRecorder(store: HistoryStore(fileURL: paths.historyFile))
+        historyRecorder = history
         api = ReadBackAPI(
             configuration: configuration,
             modelManager: manager,
@@ -534,13 +537,15 @@ final class ServiceController: ObservableObject {
             mcpClients: clients,
             serverVersion: Bundle.main.object(
                 forInfoDictionaryKey: "CFBundleShortVersionString"
-            ) as? String ?? "dev"
+            ) as? String ?? "dev",
+            history: history
         )
         clipboardMonitor = ClipboardChangeMonitor { [coordinator] in
             await coordinator.invalidateReplayCache()
         }
-        let clipboardEndpoint = URL(
-            string: "ws://\(configuration.publicHost):\(configuration.publicPort)/v1/readback/stream"
+        let clipboardEndpoint = ReadBackAPI.historySkippingStreamURL(
+            host: configuration.publicHost,
+            port: configuration.publicPort
         )!
         clipboardSpeaker = VoicePipeTextSpeaker(endpoint: clipboardEndpoint)
         clipboardAction = ClipboardReadBackAction(
@@ -722,7 +727,7 @@ final class ServiceController: ObservableObject {
         )
         switch command {
         case .start(let text), .replace(let text):
-            startClipboardSpeech(text)
+            startClipboardSpeech(text, purpose: .clipboardRead)
         case .cancelStarting:
             cancelPendingClipboardSpeech()
         case .pause:
@@ -734,6 +739,7 @@ final class ServiceController: ObservableObject {
 
     func startClipboardSpeech(
         _ text: String,
+        purpose: AppSpeechPurpose,
         completionStatus: String? = nil
     ) {
         let previousRequestID = clipboardRequestID
@@ -764,8 +770,12 @@ final class ServiceController: ObservableObject {
                 try await waitForPublicService()
                 try Task.checkCancellation()
                 guard clipboardRequestID == requestID else { return }
-                try await clipboardSpeaker.speak(text, requestID: requestID) { [weak self] in
+                let historySource = purpose.historySource
+                try await clipboardSpeaker.speak(text, requestID: requestID) { [weak self, historyRecorder] in
                     await self?.clipboardSpeechDidStart(requestID: requestID)
+                    if let historySource {
+                        await historyRecorder.record(text, source: historySource)
+                    }
                 }
                 guard clipboardRequestID == requestID else {
                     return
@@ -886,7 +896,7 @@ final class ServiceController: ObservableObject {
             guard let self else { return }
             await speechSettings.update(SpeechSettings(configuration: configuration))
             if let activeText, currentClipboardText == activeText {
-                startClipboardSpeech(activeText)
+                startClipboardSpeech(activeText, purpose: .settingsRestart)
             }
         }
     }

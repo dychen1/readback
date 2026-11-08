@@ -83,6 +83,7 @@ public final class ReadBackAPI: @unchecked Sendable {
     private let coordinator: SpeechCoordinator
     private let reader: ReadingStarter
     private let mcp: MCPEndpoint
+    private let history: HistoryRecorder?
     private let encoder = JSONEncoder()
 
     public init(
@@ -91,15 +92,18 @@ public final class ReadBackAPI: @unchecked Sendable {
         coordinator: SpeechCoordinator,
         speechSettings: SpeechSettingsStore? = nil,
         mcpClients: MCPClientRegistry = MCPClientRegistry(),
-        serverVersion: String = "dev"
+        serverVersion: String = "dev",
+        history: HistoryRecorder? = nil
     ) {
         self.configuration = configuration
         self.modelManager = modelManager
         self.coordinator = coordinator
+        self.history = history
         let reader = ReadingStarter(
             coordinator: coordinator,
             modelManager: modelManager,
-            speechSettings: speechSettings ?? SpeechSettingsStore(configuration: configuration)
+            speechSettings: speechSettings ?? SpeechSettingsStore(configuration: configuration),
+            history: history
         )
         self.reader = reader
         mcp = MCPEndpoint(
@@ -183,6 +187,7 @@ public final class ReadBackAPI: @unchecked Sendable {
                         languageCode: publicRequest.languageCode,
                         speed: publicRequest.speed
                     ),
+                    historySource: Self.agentSource(request),
                     isAbandoned: { disconnect.hasLeft }
                 )
             } catch let error as ServiceError {
@@ -231,7 +236,7 @@ public final class ReadBackAPI: @unchecked Sendable {
 
         router.ws("/v1/readback/stream", shouldUpgrade: { [self] request, _ in
             isOriginAllowed(request) ? .upgrade([:]) : .dontUpgrade
-        }) { [self] inbound, outbound, _ in
+        }) { [self] inbound, outbound, context in
             // The coordinator calls the sink while it holds its transition lock. A client
             // that stops reading must not block that lock, so events queue here and a
             // separate task writes them in order.
@@ -245,7 +250,10 @@ public final class ReadBackAPI: @unchecked Sendable {
                     try? await outbound.write(.text(text))
                 }
             }
-            await runStreamSession(inbound: inbound) { eventQueue.yield($0) }
+            await runStreamSession(
+                inbound: inbound,
+                history: makeHistoryStream(for: context.request)
+            ) { eventQueue.yield($0) }
             eventQueue.finish()
             await writer.value
         }
@@ -255,6 +263,7 @@ public final class ReadBackAPI: @unchecked Sendable {
 
     private func runStreamSession(
         inbound: WebSocketInboundStream,
+        history: HistoryStreamRecording,
         send: @escaping SpeechCoordinator.EventSink
     ) async {
         let sessionID = UUID().uuidString
@@ -275,6 +284,7 @@ public final class ReadBackAPI: @unchecked Sendable {
 
         let settings = await reader.currentSettings()
         var chunker = StreamingTextChunker()
+        var history = history
         var pauseBefore = 0.0
         do {
             for try await message in inbound.messages(maxSize: 65_536) {
@@ -285,6 +295,7 @@ public final class ReadBackAPI: @unchecked Sendable {
                 )
                 switch event {
                 case .textAppend(let text):
+                    await history.append(text)
                     pauseBefore = try await coordinator.enqueueWaitingForRoom(
                         chunker.append(text),
                         sessionID: sessionID,
@@ -299,6 +310,7 @@ public final class ReadBackAPI: @unchecked Sendable {
                         pauseBefore: pauseBefore
                     )
                 case .inputDone:
+                    history.finish()
                     _ = try await coordinator.enqueueWaitingForRoom(
                         chunker.flush().map { [$0] } ?? [],
                         sessionID: sessionID,
@@ -402,6 +414,24 @@ public final class ReadBackAPI: @unchecked Sendable {
             code: code,
             message: error.message
         )
+    }
+
+    /// Endpoint for the app's own stream connection. The app records clipboard reads itself,
+    /// so it can leave out previews and replays, and asks the stream not to record them again.
+    public static func historySkippingStreamURL(host: String, port: Int) -> URL? {
+        URL(string: "ws://\(host):\(port)/v1/readback/stream?history=skip")
+    }
+
+    private static func agentSource(_ request: Request) -> HistorySource {
+        let host = request.headers.first { $0.name.canonicalName == "x-readback-client" }?.value
+        return .agent(reportedHost: host)
+    }
+
+    private func makeHistoryStream(for request: Request) -> HistoryStreamRecording {
+        guard let history, request.uri.queryParameters.get("history") != "skip" else {
+            return .disabled
+        }
+        return history.stream(source: .voicepipe)
     }
 
     private func isOriginAllowed(_ request: Request) -> Bool {

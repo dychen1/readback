@@ -57,24 +57,29 @@ public struct ReadingStarter: Sendable {
     private let coordinator: SpeechCoordinator
     private let modelManager: any ModelManaging
     private let speechSettings: SpeechSettingsStore
+    private let history: HistoryRecorder?
 
     public init(
         coordinator: SpeechCoordinator,
         modelManager: any ModelManaging,
-        speechSettings: SpeechSettingsStore
+        speechSettings: SpeechSettingsStore,
+        history: HistoryRecorder? = nil
     ) {
         self.coordinator = coordinator
         self.modelManager = modelManager
         self.speechSettings = speechSettings
+        self.history = history
     }
 
     /// Starts `request` and returns its session ID once it is the current reading.
     /// Its text keeps queuing in the background, so this returns before playback
     /// finishes. Throws `ReadingStartError` before touching the current reading.
+    /// When `historySource` is not `nil`, the reading becomes a history entry as it starts.
     /// `isAbandoned` is checked just before the current reading is replaced, so a caller
     /// that left during validation interrupts nothing.
     public func start(
         _ request: ReadingRequest,
+        historySource: HistorySource? = nil,
         isAbandoned: @Sendable () -> Bool = { false }
     ) async throws(ReadingStartError) -> String {
         let text = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -116,6 +121,9 @@ public struct ReadingStarter: Sendable {
             try await coordinator.replaceSession(id: id) { _ in }
         } catch {
             throw .modelUnavailable(Self.switchingMessage)
+        }
+        if let history, let historySource {
+            await history.record(text, source: historySource)
         }
         Task { [coordinator] in
             var chunker = StreamingTextChunker()
