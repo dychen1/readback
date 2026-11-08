@@ -228,82 +228,97 @@ public final class ReadBackAPI: @unchecked Sendable {
         router.ws("/v1/readback/stream", shouldUpgrade: { [self] request, _ in
             isOriginAllowed(request) ? .upgrade([:]) : .dontUpgrade
         }) { [self] inbound, outbound, _ in
-            let sessionID = UUID().uuidString
+            // The coordinator calls the sink while it holds its transition lock, so a
+            // client that stops reading must not be able to block it: events queue here
+            // and a separate task writes them in order.
+            let (events, eventQueue) = AsyncStream.makeStream(of: ReadBackServerEvent.self)
             let encoder = self.encoder
-            let send: SpeechCoordinator.EventSink = { event in
-                guard let data = try? encoder.encode(event),
-                      let text = String(data: data, encoding: .utf8)
-                else { return }
-                try? await outbound.write(.text(text))
-            }
-            let sendError: @Sendable (String) async -> Void = { message in
-                await send(ReadBackServerEvent(type: .error, sessionID: sessionID, message: message))
-            }
-
-            if let unavailable = await reader.unavailableReason() {
-                await sendError(unavailable)
-                return
-            }
-            do {
-                try await coordinator.replaceSession(id: sessionID, events: send)
-            } catch {
-                await sendError(ReadingStarter.switchingMessage)
-                return
-            }
-
-            let settings = await reader.currentSettings()
-            var chunker = StreamingTextChunker()
-            var pauseBefore = 0.0
-            do {
-                for try await message in inbound.messages(maxSize: 65_536) {
-                    guard case .text(let text) = message else { continue }
-                    let event = try JSONDecoder().decode(
-                        ReadBackClientEvent.self,
-                        from: Data(text.utf8)
-                    )
-                    switch event {
-                    case .textAppend(let text):
-                        pauseBefore = try await coordinator.enqueueWaitingForRoom(
-                            chunker.append(text),
-                            sessionID: sessionID,
-                            settings: settings,
-                            pauseBefore: pauseBefore
-                        )
-                    case .inputCommit:
-                        pauseBefore = try await coordinator.enqueueWaitingForRoom(
-                            chunker.flush().map { [$0] } ?? [],
-                            sessionID: sessionID,
-                            settings: settings,
-                            pauseBefore: pauseBefore
-                        )
-                    case .inputDone:
-                        _ = try await coordinator.enqueueWaitingForRoom(
-                            chunker.flush().map { [$0] } ?? [],
-                            sessionID: sessionID,
-                            settings: settings,
-                            pauseBefore: pauseBefore
-                        )
-                        await coordinator.finishInput(sessionID: sessionID)
-                    case .playbackCancel:
-                        await coordinator.cancel(sessionID: sessionID)
-                        return
-                    case .playbackPause:
-                        await coordinator.pause(sessionID: sessionID)
-                    case .playbackResume:
-                        await coordinator.resume(sessionID: sessionID)
-                    }
+            let writer = Task {
+                for await event in events {
+                    guard let data = try? encoder.encode(event),
+                          let text = String(data: data, encoding: .utf8)
+                    else { continue }
+                    try? await outbound.write(.text(text))
                 }
-                await coordinator.cancel(sessionID: sessionID)
-            } catch SpeechCoordinatorError.sessionNotActive {
-                // The reading ended or was replaced; the client already received
-                // `session.finished` with the reason.
-            } catch {
-                await coordinator.cancel(sessionID: sessionID)
-                await sendError(String(describing: error))
             }
+            await runStreamSession(inbound: inbound) { eventQueue.yield($0) }
+            eventQueue.finish()
+            await writer.value
         }
 
         return router
+    }
+
+    private func runStreamSession(
+        inbound: WebSocketInboundStream,
+        send: @escaping SpeechCoordinator.EventSink
+    ) async {
+        let sessionID = UUID().uuidString
+        let sendError: @Sendable (String) async -> Void = { message in
+            await send(ReadBackServerEvent(type: .error, sessionID: sessionID, message: message))
+        }
+
+        if let unavailable = await reader.unavailableReason() {
+            await sendError(unavailable)
+            return
+        }
+        do {
+            try await coordinator.replaceSession(id: sessionID, events: send)
+        } catch {
+            await sendError(ReadingStarter.switchingMessage)
+            return
+        }
+
+        let settings = await reader.currentSettings()
+        var chunker = StreamingTextChunker()
+        var pauseBefore = 0.0
+        do {
+            for try await message in inbound.messages(maxSize: 65_536) {
+                guard case .text(let text) = message else { continue }
+                let event = try JSONDecoder().decode(
+                    ReadBackClientEvent.self,
+                    from: Data(text.utf8)
+                )
+                switch event {
+                case .textAppend(let text):
+                    pauseBefore = try await coordinator.enqueueWaitingForRoom(
+                        chunker.append(text),
+                        sessionID: sessionID,
+                        settings: settings,
+                        pauseBefore: pauseBefore
+                    )
+                case .inputCommit:
+                    pauseBefore = try await coordinator.enqueueWaitingForRoom(
+                        chunker.flush().map { [$0] } ?? [],
+                        sessionID: sessionID,
+                        settings: settings,
+                        pauseBefore: pauseBefore
+                    )
+                case .inputDone:
+                    _ = try await coordinator.enqueueWaitingForRoom(
+                        chunker.flush().map { [$0] } ?? [],
+                        sessionID: sessionID,
+                        settings: settings,
+                        pauseBefore: pauseBefore
+                    )
+                    await coordinator.finishInput(sessionID: sessionID)
+                case .playbackCancel:
+                    await coordinator.cancel(sessionID: sessionID)
+                    return
+                case .playbackPause:
+                    await coordinator.pause(sessionID: sessionID)
+                case .playbackResume:
+                    await coordinator.resume(sessionID: sessionID)
+                }
+            }
+            await coordinator.cancel(sessionID: sessionID)
+        } catch SpeechCoordinatorError.sessionNotActive {
+            // The reading ended or was replaced; the client already received
+            // `session.finished` with the reason.
+        } catch {
+            await coordinator.cancel(sessionID: sessionID)
+            await sendError(String(describing: error))
+        }
     }
 
     public func run() async throws {
