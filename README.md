@@ -76,6 +76,25 @@ Copy up to 2,000 characters, then press `Option-Command-R` (`⌥⌘R`). Press th
 
 The menu-bar popover has the same Read Clipboard action.
 
+ReadBack plays one reading at a time. A new reading from any source — the shortcut, a voice preview, `voicepipe`, the HTTP API, or an agent — stops the current one and starts from the beginning. The popover's **Stop** button ends the current reading, whatever started it.
+
+## Agent read-back
+
+ReadBack serves an [MCP](https://modelcontextprotocol.io) server at `http://127.0.0.1:51280/mcp` with two tools:
+
+- `play(text)` reads the text aloud. It returns as soon as playback starts and replaces any current reading.
+- `stop()` ends the current reading.
+
+**Settings → Agent Read-Back** shows how to connect each host with the port ReadBack actually uses, and when each host last connected. ReadBack never edits another app's configuration; you run or confirm the step yourself:
+
+| Host | Connect |
+| --- | --- |
+| Cursor | Click **Add to Cursor**, then confirm in Cursor. Without Cursor installed, Settings shows the entry for `~/.cursor/mcp.json`. |
+| Claude Code | `claude mcp add --transport http --scope user readback http://127.0.0.1:51280/mcp` |
+| Codex | `codex mcp add readback --url http://127.0.0.1:51280/mcp` |
+
+The same section installs the `readback` skill for ChatGPT and Codex, Claude Code, and Cursor. The skill turns the latest agent answer into a spoken brief and plays it with the MCP `play` tool when the host has it. ReadBack keeps the skill in `~/Library/Application Support/ReadBack/Skills/readback` and links each host's skills folder to it. At launch, ReadBack updates that copy to the version bundled with the app if ReadBack installed it; it never changes a skill folder it does not own.
+
 ## Models and languages
 
 Kokoro is bundled, active by default. English and French work without another download. The Settings window offers these optional model installs:
@@ -115,8 +134,9 @@ The popover provides:
 - Automatic voice preview with `test, hello world`
 - A paragraph-pause slider from `0 ms` to `250 ms` in `25 ms` steps; the default is `50 ms`
 - A playback-speed slider from `0.5×` to `2×` in `0.25×` steps; the default is `1×`
+- A **Stop** button that ends the current reading, whatever started it
 - Start, stop, launch-at-login, and clipboard controls
-- A Settings window for model installs, removal, and local model registration
+- A Settings window for agent read-back setup, model installs, removal, and local model registration
 
 ReadBack removes common Markdown markers while it keeps readable text and paragraph breaks.
 
@@ -153,7 +173,7 @@ Scripts/swiftw build
 your-command | .build/debug/voicepipe
 ```
 
-`voicepipe` sends text as it arrives, commits buffered input after 300 milliseconds without input, and exits after playback finishes. It does not accept a model option; it always uses the model active in the app.
+`voicepipe` sends text as it arrives, commits buffered input after 300 milliseconds without input, and exits after playback finishes. If a newer reading replaces it or it is stopped, it says so and exits with status 1. It does not accept a model option; it always uses the model active in the app.
 
 ## HTTP API
 
@@ -164,6 +184,7 @@ The public service listens only on `http://127.0.0.1:51280` by default.
 | `GET` | `/health` | Report the active model and runtime state |
 | `POST` | `/v1/audio/speech` | Return WAV or PCM audio |
 | `POST` | `/play` | Generate and play speech on this Mac |
+| `POST` | `/mcp` | MCP server for agents (see [Agent read-back](#agent-read-back)) |
 | WebSocket | `/v1/readback/stream` | Stream text and playback controls |
 
 Generate a WAV file with the app's active model:
@@ -190,6 +211,19 @@ curl \
   http://127.0.0.1:51280/play
 ```
 
+`/play` replaces any current reading, reads long text in sentence-sized chunks with the paragraph pause between paragraphs, and responds when the reading ends. Closing the connection early stops the reading. Errors use a JSON body such as `{"error":{"code":"empty_input","message":"The text to read is empty."}}`:
+
+| Status | Codes | Meaning |
+| --- | --- | --- |
+| `200` | — | The whole text was read: `{"ok":true}` |
+| `400` | `invalid_json`, `invalid_request`, `empty_input`, `invalid_speed`, `invalid_voice`, `model_selection_not_allowed` | The request cannot be read; nothing was interrupted |
+| `409` | `interrupted`, `stopped` | A newer reading replaced this one, or it was stopped |
+| `413` | `request_too_large` | The body is too large |
+| `500` | `speech_failed` | Synthesis or playback failed |
+| `503` | `model_not_ready` | The model is loading, switching, or installing; nothing was interrupted |
+
+`speed` must be between `0.5` and `2`.
+
 Clients cannot list, install, remove, load, or select models. A speech request that contains a `model` key returns HTTP 400 with `model_selection_not_allowed`. Change the active model in the ReadBack app.
 
 ## WebSocket protocol
@@ -209,6 +243,8 @@ Client events:
 
 Server event types include `session.ready`, `speech.queued`, `speech.started`, `speech.finished`, `playback.paused`, `playback.resumed`, `queue.paused`, `queue.resumed`, `session.finished`, and `error`.
 
+A new connection replaces the current reading. `session.finished` carries a `reason`: `completed`, `interrupted` (a newer reading replaced it), `stopped`, or `failed`. After that, the connection's events no longer affect playback.
+
 
 ## Local files
 
@@ -224,6 +260,8 @@ ReadBack stores app data under:
 | `Models/` | Verified model and optional language downloads |
 | `RuntimeModels/` | Runtime links for the bundled Kokoro model |
 | `local-model.json` | One security-scoped local folder registration |
+| `Skills/readback/` | The managed `readback` skill that host skill folders link to |
+| `mcp-clients.json` | Name, version, and last connection time of up to 20 MCP clients |
 
 Model weights and generated app bundles are not tracked by Git.
 
@@ -231,8 +269,8 @@ Model weights and generated app bundles are not tracked by Git.
 ## Privacy and limits
 
 - Text, inference, generated audio, and playback stay on the Mac.
-- The local service has no authentication. Do not expose it beyond loopback.
-- ReadBack supports one playback session and one loaded model at a time.
+- The local service, including the MCP server, has no authentication. Do not expose it beyond loopback. It refuses browser origins, and the MCP server also refuses requests whose `Host` is not a loopback address.
+- ReadBack plays one reading and keeps one model loaded at a time.
 - The local model slot supports known runtime profiles, not arbitrary code or repositories.
 - The app has no automatic updater yet.
 
