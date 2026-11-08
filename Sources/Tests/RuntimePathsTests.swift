@@ -37,6 +37,12 @@ func runtimePathsTests() -> [TestCase] {
                 ),
                 "installed model directory"
             )
+            try expect(
+                paths.historyFile.path.hasSuffix(
+                    "/Library/Application Support/ReadBack/history.sqlite"
+                ),
+                "history database"
+            )
         },
         TestCase(name: "configuration migrates from the old app support directory") {
             let root = FileManager.default.temporaryDirectory
