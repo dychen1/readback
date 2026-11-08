@@ -115,6 +115,18 @@ func mcpEndpointTests() -> [TestCase] {
                 )
                 try expectEqual(foreignOrigin.status, 403, "browser origin")
 
+                let otherLoopbackPort = try await client.rpc(
+                    "tools/list",
+                    headers: ["Origin": "http://127.0.0.1:5173"]
+                )
+                try expectEqual(otherLoopbackPort.status, 403, "page on another loopback port")
+
+                let ownOrigin = try await client.rpc(
+                    "tools/list",
+                    headers: ["Origin": "http://127.0.0.1:51280"]
+                )
+                try expectEqual(ownOrigin.status, 200, "ReadBack's own origin")
+
                 let body = #"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#
                 let foreignHost = try await rawHTTPStatus(
                     port: client.port,
@@ -142,7 +154,7 @@ func mcpEndpointTests() -> [TestCase] {
 }
 
 /// Sends a hand-written HTTP/1.1 request, for headers URLSession will not send.
-private func rawHTTPStatus(port: Int?, request: String) async throws -> Int {
+func rawHTTPStatus(port: Int?, request: String) async throws -> Int {
     guard let port else { throw TestFailure(description: "missing live test port") }
     let task = URLSession.shared.streamTask(withHostName: "127.0.0.1", port: port)
     task.resume()

@@ -241,6 +241,27 @@ func readBackWebSocketTests() -> [TestCase] {
                 try expect(stops >= 1, "audio stops")
             }
         },
+        TestCase(name: "stream upgrade accepts only its own loopback origin") {
+            let fixture = LiveFixture()
+            _ = try await fixture.app.test(.live) { client in
+                let port = try client.port.unwrap("live test port")
+                func upgradeStatus(origin: String) async throws -> Int {
+                    try await rawHTTPStatus(
+                        port: port,
+                        request: "GET /v1/readback/stream HTTP/1.1\r\nHost: 127.0.0.1:\(port)\r\n"
+                            + "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+                            + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n"
+                            + "Origin: \(origin)\r\n\r\n"
+                    )
+                }
+                for origin in ["http://127.0.0.1:5173", "https://evil.example"] {
+                    let status = try await upgradeStatus(origin: origin)
+                    try expect(status != 101, "\(origin) must not upgrade, got \(status)")
+                }
+                let own = try await upgradeStatus(origin: "http://127.0.0.1:51280")
+                try expectEqual(own, 101, "ReadBack's own origin upgrades")
+            }
+        },
         TestCase(name: "a stream started while the model loads gets a clear error") {
             let fixture = LiveFixture(manager: APITestModelManager(runtimeState: .loading(.kokoro)))
             _ = try await fixture.app.test(.live) { client in

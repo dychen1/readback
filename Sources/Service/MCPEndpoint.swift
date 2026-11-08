@@ -14,6 +14,24 @@ struct MCPEndpoint: Sendable {
     let tools: ReadBackMCPTools
     let clients: MCPClientRegistry
     let serverVersion: String
+    private let validationPipeline: StandardValidationPipeline
+
+    /// - Parameter port: ReadBack's configured port. Browser origins must name it, so a
+    ///   page served from another loopback port (a dev server, say) cannot call the tools.
+    init(tools: ReadBackMCPTools, clients: MCPClientRegistry, serverVersion: String, port: Int) {
+        self.tools = tools
+        self.clients = clients
+        self.serverVersion = serverVersion
+        validationPipeline = StandardValidationPipeline(validators: [
+            OriginValidator(
+                allowedHosts: OriginValidator.localhost().allowedHosts,
+                allowedOrigins: OriginValidator.localhost(port: port).allowedOrigins
+            ),
+            AcceptHeaderValidator(mode: .jsonOnly),
+            ContentTypeValidator(),
+            ProtocolVersionValidator(),
+        ])
+    }
 
     func handle(_ request: Request) async throws -> Response {
         let body = try await request.body.collect(upTo: Self.maximumBodySize)
@@ -34,7 +52,7 @@ struct MCPEndpoint: Sendable {
             path: request.uri.path
         )
 
-        let transport = StatelessHTTPServerTransport()
+        let transport = StatelessHTTPServerTransport(validationPipeline: validationPipeline)
         let server = await makeServer()
         try await server.start(transport: transport) { [clients] client, _ in
             await clients.record(clientName: client.name, version: client.version)

@@ -217,6 +217,7 @@ curl \
 | --- | --- | --- |
 | `200` | — | The whole text was read: `{"ok":true}` |
 | `400` | `invalid_json`, `invalid_request`, `empty_input`, `invalid_speed`, `invalid_voice`, `model_selection_not_allowed` | The request cannot be read; nothing was interrupted |
+| `403` | `origin_not_allowed` | A browser page other than ReadBack's own origin sent the request; nothing was interrupted |
 | `409` | `interrupted`, `stopped` | A newer reading replaced this one, or it was stopped |
 | `413` | `request_too_large` | The body is too large |
 | `500` | `speech_failed` | Synthesis or playback failed |
@@ -269,7 +270,7 @@ Model weights and generated app bundles are not tracked by Git.
 ## Privacy and limits
 
 - Text, inference, generated audio, and playback stay on the Mac.
-- The local service, including the MCP server, has no authentication. Do not expose it beyond loopback. It refuses browser origins, and the MCP server also refuses requests whose `Host` is not a loopback address.
+- The local service, including the MCP server, has no authentication. Do not expose it beyond loopback. It refuses browser origins other than its own `http://127.0.0.1:<port>`, including pages served from other loopback ports, and the MCP server also refuses requests whose `Host` is not a loopback address.
 - ReadBack plays one reading and keeps one model loaded at a time.
 - The local model slot supports known runtime profiles, not arbitrary code or repositories.
 - The app has no automatic updater yet.

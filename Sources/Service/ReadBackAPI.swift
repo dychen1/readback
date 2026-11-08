@@ -105,7 +105,8 @@ public final class ReadBackAPI: @unchecked Sendable {
         mcp = MCPEndpoint(
             tools: ReadBackMCPTools(reader: reader, coordinator: coordinator),
             clients: mcpClients,
-            serverVersion: serverVersion
+            serverVersion: serverVersion,
+            port: configuration.publicPort
         )
     }
 
@@ -127,7 +128,7 @@ public final class ReadBackAPI: @unchecked Sendable {
         }
 
         router.post("/v1/audio/speech") { [self] request, context -> Response in
-            guard Self.isOriginAllowed(request) else { return originRejectedResponse() }
+            guard isOriginAllowed(request) else { return originRejectedResponse() }
             do {
                 let publicRequest = try await decodeSpeechRequest(request, context: context)
                 let defaults = await reader.currentSettings()
@@ -157,7 +158,7 @@ public final class ReadBackAPI: @unchecked Sendable {
         }
 
         router.post("/play") { [self] request, context -> Response in
-            guard Self.isOriginAllowed(request) else { return originRejectedResponse() }
+            guard isOriginAllowed(request) else { return originRejectedResponse() }
             let id: String
             do {
                 let publicRequest = try await decodeSpeechRequest(request, context: context)
@@ -224,8 +225,8 @@ public final class ReadBackAPI: @unchecked Sendable {
         router.get("/mcp") { [mcp] request, _ in try await mcp.handle(request) }
         router.delete("/mcp") { [mcp] request, _ in try await mcp.handle(request) }
 
-        router.ws("/v1/readback/stream", shouldUpgrade: { request, _ in
-            Self.isOriginAllowed(request) ? .upgrade([:]) : .dontUpgrade
+        router.ws("/v1/readback/stream", shouldUpgrade: { [self] request, _ in
+            isOriginAllowed(request) ? .upgrade([:]) : .dontUpgrade
         }) { [self] inbound, outbound, _ in
             let sessionID = UUID().uuidString
             let encoder = self.encoder
@@ -382,23 +383,27 @@ public final class ReadBackAPI: @unchecked Sendable {
         )
     }
 
-    private static func isOriginAllowed(_ request: Request) -> Bool {
+    private func isOriginAllowed(_ request: Request) -> Bool {
         // Most native local clients (voicepipe's URLSessionWebSocketTask, curl) never
         // send an Origin header at all, so a missing header is always allowed. Some
-        // WebSocket client libraries (e.g. the vendored swift-websocket used in tests,
-        // whose Origin omits the port entirely) set Origin to their own connection URL
-        // regardless of context, so a present Origin is allowed only when its host
-        // names this service's own loopback address. A real browser-based attacker
-        // page's Origin is the ATTACKER PAGE's origin (e.g. https://evil.example) —
-        // never 127.0.0.1/localhost — so this still blocks the actual drive-by attack
-        // while accepting loopback-native clients regardless of how they format Origin.
+        // WebSocket client libraries (e.g. the vendored swift-websocket used in tests)
+        // send their own `ws://` URL without a port; browsers never send a `ws` origin.
+        // A browser origin must be this service itself: any other page, including one
+        // served from another loopback port such as a dev server, is refused.
         guard let origin = request.headers[.origin] else { return true }
-        guard let host = URL(string: origin)?.host else { return false }
-        return host == "127.0.0.1" || host == "localhost" || host == "::1"
+        guard let url = URL(string: origin),
+              let host = url.host,
+              Self.isLoopbackHost(host)
+        else { return false }
+        switch url.scheme {
+        case "ws", "wss": return true
+        case "http", "https": return url.port == configuration.publicPort
+        default: return false
+        }
     }
 
     private static func isLoopbackHost(_ host: String) -> Bool {
-        host == "127.0.0.1" || host == "localhost" || host == "::1"
+        ["127.0.0.1", "localhost", "::1", "[::1]"].contains(host)
     }
 
     private func originRejectedResponse() -> Response {
@@ -406,7 +411,7 @@ public final class ReadBackAPI: @unchecked Sendable {
             ServiceError(
                 status: .forbidden,
                 code: "origin_not_allowed",
-                message: "ReadBack does not accept requests from a browser origin."
+                message: "ReadBack accepts browser requests only from its own origin."
             )
         )
     }
