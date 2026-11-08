@@ -137,14 +137,16 @@ The popover provides:
 - A **Stop** button that ends the current reading, whatever started it
 - Start, stop, launch-at-login, and clipboard controls
 - A Settings window for agent read-back setup, model installs, removal, and local model registration
-- A History window for replaying recent read-backs
+- A History window that replays recent read-backs
 
 ReadBack removes common Markdown markers while it keeps readable text and paragraph breaks.
 
 
 ### History
 
-Choose **History…** in the popover to see the last 200 read-backs, newest first, with the time, the source (agent, clipboard, or voicepipe), and the first line of text. **Play** stops the current reading and reads the entry again with the current voice; a replay does not add a new entry. Delete single entries, or choose **Clear History…** to delete them all. Voice previews are not saved.
+Choose **History…** in the popover to see the last 200 read-backs, newest first. Each entry shows the time, the source, and the first line of text. The source is an agent, the clipboard, or voicepipe.
+
+**Play** stops the current reading and reads the entry again with the current voice. A replay does not add a new entry. You can delete one entry, or choose **Clear History…** to delete all entries. ReadBack does not save voice previews.
 
 
 ### Add a local model
@@ -231,13 +233,13 @@ curl \
 
 `speed` must be between `0.5` and `2`.
 
-An agent can name itself with an optional `X-ReadBack-Client` header, for example `X-ReadBack-Client: Cursor`. The History window shows the name next to the entry.
+An agent can send its name in an optional `X-ReadBack-Client` header, for example `X-ReadBack-Client: Cursor`. The History window shows this name as the source of the entry.
 
 Clients cannot list, install, remove, load, or select models. A speech request that contains a `model` key returns HTTP 400 with `model_selection_not_allowed`. Change the active model in the ReadBack app.
 
 ## WebSocket protocol
 
-Connect to `ws://127.0.0.1:51280/v1/readback/stream`. Add `?history=skip` to keep the stream out of History.
+Connect to `ws://127.0.0.1:51280/v1/readback/stream`. To read a stream without saving it to History, add `?history=skip` to the URL.
 
 Client events:
 
@@ -271,7 +273,7 @@ ReadBack stores app data under:
 | `local-model.json` | One security-scoped local folder registration |
 | `Skills/readback/` | The managed `readback` skill that host skill folders link to |
 | `mcp-clients.json` | Name, version, and last connection time of up to 20 MCP clients |
-| `history.sqlite` | Text of the last 200 read-backs, readable only by your user account |
+| `history.sqlite` | The text of the last 200 read-backs. Only your user account can read this file. |
 
 Model weights and generated app bundles are not tracked by Git.
 
@@ -279,7 +281,8 @@ Model weights and generated app bundles are not tracked by Git.
 ## Privacy and limits
 
 - Text, inference, generated audio, and playback stay on the Mac.
-- ReadBack stores the text you hear on disk: the last 200 read-backs from agents, the clipboard, and voicepipe are kept in `history.sqlite`. No audio is saved. History is always on; delete single entries or clear all of it in the History window. History is not available to agents or through the local service.
+- ReadBack saves the text that you hear to disk. The file `history.sqlite` keeps the last 200 read-backs from agents, the clipboard, and voicepipe. ReadBack saves no audio.
+- History is always on. You can delete one entry or clear all entries in the History window. Agents and the local service cannot read history.
 - The local service, including the MCP server, has no authentication. Do not expose it beyond loopback. It refuses requests from browser pages on other origins, which includes pages on other loopback ports. Its own origin is `http://127.0.0.1:<port>`, and only that exact origin is accepted. Every route also refuses a request if its `Host` is not a loopback address.
 - ReadBack plays one reading and keeps one model loaded at a time.
 - The local model slot supports known runtime profiles, not arbitrary code or repositories.

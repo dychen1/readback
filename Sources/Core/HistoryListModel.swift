@@ -1,8 +1,8 @@
 import Combine
 import Foundation
 
-/// Behaviour behind the History window. Views stay thin, so a new visual design can reuse
-/// this model unchanged.
+/// Holds the behavior of the History window. The views contain no logic, so a new design can
+/// use this model without changes.
 @MainActor
 public final class HistoryListModel: ObservableObject {
     public enum State: Equatable, Sendable {
@@ -12,7 +12,8 @@ public final class HistoryListModel: ObservableObject {
     }
 
     @Published public private(set) var state: State = .loading
-    /// Why the last delete or clear failed; reset by the next successful one.
+    /// Tells why the last delete or clear failed. The next successful delete or clear sets it
+    /// to `nil`.
     @Published public private(set) var actionError: String?
     @Published public private(set) var isConfirmingClear = false
 
@@ -24,7 +25,7 @@ public final class HistoryListModel: ObservableObject {
         self.replay = replay
     }
 
-    /// Entries newest first; empty while loading or unavailable.
+    /// The entries, newest first. The list is empty while history loads or is unavailable.
     public var entries: [HistoryEntry] {
         if case .loaded(let entries) = state { entries } else { [] }
     }
@@ -33,11 +34,12 @@ public final class HistoryListModel: ObservableObject {
         do {
             state = .loaded(try await store.entries())
         } catch {
-            state = .unavailable("History is unavailable. \(error.localizedDescription)")
+            state = .unavailable(error.localizedDescription)
         }
     }
 
-    /// Keeps the list current until the calling task is cancelled, e.g. by a view's `.task`.
+    /// Loads the list again after each change. It stops when the caller cancels its task, for
+    /// example a view's `.task`.
     public func observeChanges() async {
         let changes = await store.changes()
         await refresh()
@@ -51,10 +53,10 @@ public final class HistoryListModel: ObservableObject {
     }
 
     public func delete(_ entry: HistoryEntry) async {
-        await perform("delete the entry") { try await $0.delete(id: entry.id) }
+        await perform("ReadBack did not delete the entry.") { try await $0.delete(id: entry.id) }
     }
 
-    /// Asks for confirmation before `clear()`; there is nothing to confirm for an empty list.
+    /// Asks for confirmation before `clear()`. An empty list has nothing to confirm.
     public func requestClear() {
         isConfirmingClear = !entries.isEmpty
     }
@@ -65,25 +67,25 @@ public final class HistoryListModel: ObservableObject {
 
     public func clear() async {
         isConfirmingClear = false
-        await perform("clear history") { try await $0.clear() }
+        await perform("ReadBack did not clear history.") { try await $0.clear() }
     }
 
     private func perform(
-        _ action: String,
+        _ failureMessage: String,
         _ change: (HistoryStore) async throws -> Void
     ) async {
         do {
             try await change(store)
             actionError = nil
         } catch {
-            actionError = "Could not \(action): \(error.localizedDescription)"
+            actionError = "\(failureMessage) \(error.localizedDescription)"
         }
         await refresh()
     }
 }
 
 extension HistoryEntry {
-    /// The first non-blank line, trimmed, for one-line list rows.
+    /// The first line that is not blank, without the spaces at each end.
     public var firstLine: String {
         text.split(whereSeparator: \.isNewline)
             .lazy

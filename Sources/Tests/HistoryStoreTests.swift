@@ -2,14 +2,15 @@ import Foundation
 import ReadBackCore
 import SQLite3
 
-/// A history file in a fresh temporary directory; remove it with `removeHistoryDirectory(of:)`.
+/// Returns a history file in a new temporary directory. Remove it with
+/// `removeHistoryDirectory(of:)`.
 func makeHistoryFileURL() -> URL {
     FileManager.default.temporaryDirectory
         .appendingPathComponent("readback-history-\(UUID().uuidString)", isDirectory: true)
         .appendingPathComponent("history.sqlite")
 }
 
-/// A history file whose parent is a regular file, so it can never be opened.
+/// Returns a history file whose parent is a regular file, so the store can never open it.
 func makeUnopenableHistoryFileURL() throws -> URL {
     let blocker = FileManager.default.temporaryDirectory
         .appendingPathComponent("readback-history-blocker-\(UUID().uuidString)")

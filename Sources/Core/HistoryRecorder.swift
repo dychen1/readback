@@ -1,9 +1,10 @@
 import Foundation
 import os
 
-/// The single entry point speech paths use to add to history.
+/// All speech paths use this type to add entries to history.
 ///
-/// Recording never throws: a history failure is logged and the reading carries on.
+/// Recording does not throw. If a save fails, the recorder writes the error to the system log
+/// and the reading continues.
 public struct HistoryRecorder: Sendable {
     public let store: HistoryStore
     private let now: @Sendable () -> Date
@@ -14,8 +15,8 @@ public struct HistoryRecorder: Sendable {
         self.now = now
     }
 
-    /// Saves a reading that has just started. Returns the new entry's ID, or `nil` when the
-    /// text is blank or could not be saved.
+    /// Saves a reading that has just started. Returns the ID of the new entry. Returns `nil`
+    /// if the text is blank or the save fails.
     @discardableResult
     public func record(_ text: String, source: HistorySource) async -> Int64? {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
@@ -23,7 +24,7 @@ public struct HistoryRecorder: Sendable {
             return try await store.insert(text, source: source, at: now())
         } catch {
             Self.logger.error(
-                "Could not save a history entry: \(error.localizedDescription, privacy: .public)"
+                "History did not save an entry. \(error.localizedDescription, privacy: .public)"
             )
             return nil
         }
@@ -39,15 +40,15 @@ public struct HistoryRecorder: Sendable {
             return true
         } catch {
             Self.logger.error(
-                "Could not extend history entry \(id): \(error.localizedDescription, privacy: .public)"
+                "History did not add text to entry \(id). \(error.localizedDescription, privacy: .public)"
             )
             return false
         }
     }
 }
 
-/// Records one streamed reading. The entry is created with the first non-blank text and
-/// grows as text arrives, so an interrupted stream keeps everything sent so far.
+/// Records one streamed reading. It creates the entry when the first non-blank text arrives,
+/// then adds each later piece of text. An interrupted stream keeps all text sent before the stop.
 public struct HistoryStreamRecording: Sendable {
     public static let disabled = HistoryStreamRecording(recorder: nil, source: .voicepipe)
 
@@ -64,8 +65,8 @@ public struct HistoryStreamRecording: Sendable {
     public mutating func append(_ text: String) async {
         guard let recorder, !isFinished, !text.isEmpty else { return }
         if let entryID {
-            // Stop after a failed append (including the user deleting the entry): an entry
-            // with a gap in the middle would replay something that was never heard.
+            // Stop after a failed append, for example after the user deletes the entry. An
+            // entry with a gap would replay text that is different from what the user heard.
             let appended = await recorder.append(text, to: entryID)
             isFinished = !appended
         } else if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -74,14 +75,14 @@ public struct HistoryStreamRecording: Sendable {
         }
     }
 
-    /// Ends the recording; later text is ignored.
+    /// Ends the recording. The recording ignores all later text.
     public mutating func finish() {
         isFinished = true
     }
 }
 
-/// Why the app itself is speaking. Only clipboard reads become history: previews are not
-/// something the user asked to hear, and replays and restarts repeat an existing entry.
+/// Tells why the app speaks. Only clipboard reads become history entries. The user did not
+/// ask to hear a preview. A replay or a restart repeats an entry that history already has.
 public enum AppSpeechPurpose: Sendable {
     case clipboardRead
     case voicePreview
@@ -96,7 +97,8 @@ public enum AppSpeechPurpose: Sendable {
 extension HistorySource {
     public static let maximumAgentHostLength = 64
 
-    /// An agent source from a client-supplied host name, which is untrusted and optional.
+    /// Makes an agent source from the host name that a client sends. The name is optional,
+    /// and ReadBack does not trust it.
     public static func agent(reportedHost: String?) -> HistorySource {
         let printable = (reportedHost ?? "").unicodeScalars.filter {
             !CharacterSet.controlCharacters.contains($0)

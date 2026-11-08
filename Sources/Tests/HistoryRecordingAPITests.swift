@@ -177,7 +177,7 @@ func historyRecordingAPITests() -> [TestCase] {
             try expectEqual(entries.map(\.text), ["First sentence. Second sentence."], "streamed text")
             try expectEqual(entries.map(\.source), [.voicepipe], "streamed source")
         },
-        TestCase(name: "a cancelled stream keeps the text sent before cancelling") {
+        TestCase(name: "a canceled stream keeps the text sent before the cancel") {
             let file = makeHistoryFileURL()
             defer { removeHistoryDirectory(of: file) }
             let fixture = HistoryAPIFixture(historyFile: file, playDuration: .seconds(5))
@@ -190,7 +190,7 @@ func historyRecordingAPITests() -> [TestCase] {
             let entries = try await fixture.store.entries()
             try expectEqual(entries.map(\.text), ["Interrupted reading."], "interrupted text")
         },
-        TestCase(name: "the app's own stream endpoint is not saved by the server") {
+        TestCase(name: "the server does not save a stream from the app's own endpoint") {
             let file = makeHistoryFileURL()
             defer { removeHistoryDirectory(of: file) }
             let fixture = HistoryAPIFixture(historyFile: file)

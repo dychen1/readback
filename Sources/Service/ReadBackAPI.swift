@@ -416,8 +416,8 @@ public final class ReadBackAPI: @unchecked Sendable {
         )
     }
 
-    /// Endpoint for the app's own stream connection. The app records clipboard reads itself,
-    /// so it can leave out previews and replays, and asks the stream not to record them again.
+    /// Returns the stream URL for the app's own connection. The app records clipboard reads
+    /// itself and skips previews and replays. This URL tells the server not to record the stream.
     public static func historySkippingStreamURL(host: String, port: Int) -> URL? {
         URL(string: "ws://\(host):\(port)/v1/readback/stream?history=skip")
     }

@@ -1,8 +1,8 @@
 import ReadBackCore
 import SwiftUI
 
-/// PLACEHOLDER History window, to be replaced once a visual direction is chosen.
-/// Keep behaviour in `HistoryListModel` so the final design can reuse it unchanged.
+/// PLACEHOLDER History window. Replace it when the user chooses a visual direction.
+/// Keep the behavior in `HistoryListModel` so that the final design can use it without changes.
 struct HistoryPlaceholderView: View {
     @ObservedObject var model: HistoryListModel
 
@@ -37,7 +37,7 @@ struct HistoryPlaceholderView: View {
                 Task { await model.clear() }
             }
         } message: {
-            Text("This deletes every saved read-back and cannot be undone.")
+            Text("This deletes every saved read-back. You cannot undo this.")
         }
         .task {
             await model.observeChanges()
@@ -51,13 +51,13 @@ struct HistoryPlaceholderView: View {
             ProgressView()
         case .unavailable(let message):
             ContentUnavailableView(
-                "History Unavailable",
+                "History unavailable",
                 systemImage: "exclamationmark.triangle",
                 description: Text(message)
             )
         case .loaded(let entries) where entries.isEmpty:
             ContentUnavailableView(
-                "No Read-Backs Yet",
+                "No read-backs yet",
                 systemImage: "clock",
                 description: Text("Text you hear appears here, newest first.")
             )

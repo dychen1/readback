@@ -6,8 +6,8 @@ extension ServiceController {
     /// replay does not add a history entry.
     func replayFromHistory(_ entry: HistoryEntry) {
         Task {
-            // The clipboard path only cancels its own earlier request, so an agent or
-            // voicepipe reading would otherwise block the replay's session.
+            // The clipboard path cancels only its own earlier request. Without this call, an
+            // agent or voicepipe reading blocks the replay.
             await coordinator.stop()
             startClipboardSpeech(
                 entry.text,

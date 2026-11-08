@@ -30,21 +30,21 @@ public enum HistoryStoreError: Error, Equatable, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .openFailed(let path, let reason):
-            "Could not open \(path): \(reason)"
+            "ReadBack cannot open \(path): \(reason)."
         case .unsupportedSchemaVersion(let path, let found, let supported):
-            "\(path) uses history format \(found), but this version of ReadBack reads up to format \(supported)."
+            "\(path) uses history format \(found). This version of ReadBack reads only format \(supported) or lower."
         case .sqliteFailed(let operation, let reason):
-            "Could not \(operation): \(reason)"
+            "ReadBack cannot \(operation): \(reason)."
         case .entryNotFound(let id):
-            "History entry \(id) no longer exists."
+            "History entry \(id) does not exist."
         }
     }
 }
 
-/// Spoken-text history in a user-only SQLite file.
+/// Keeps the text of read-backs in a SQLite file that only the user can read.
 ///
-/// The database opens on first use. A failed open is retried on the next call, so a damaged
-/// or unreadable file makes history unavailable without affecting speech.
+/// The store opens the database on first use. If the open fails, the store tries again on
+/// the next call. A damaged or unreadable file stops history but does not stop speech.
 public actor HistoryStore {
     public static let defaultMaximumEntries = 200
     static let schemaVersion: Int32 = 1
@@ -60,7 +60,7 @@ public actor HistoryStore {
         self.maximumEntries = maximumEntries
     }
 
-    /// Saves a new entry and drops the oldest entries beyond `maximumEntries`.
+    /// Saves a new entry. Then deletes the oldest entries until `maximumEntries` remain.
     @discardableResult
     public func insert(_ text: String, source: HistorySource, at date: Date) throws -> Int64 {
         let db = try openIfNeeded()
@@ -91,7 +91,7 @@ public actor HistoryStore {
             db,
             "UPDATE entries SET text = text || ? WHERE id = ?",
             [.text(text), .integer(id)],
-            operation: "update a history entry"
+            operation: "add text to a history entry"
         )
         guard sqlite3_changes(db) > 0 else {
             throw HistoryStoreError.entryNotFound(id)
@@ -99,7 +99,7 @@ public actor HistoryStore {
         notifyChanged()
     }
 
-    /// All entries, newest first.
+    /// Returns all entries, newest first.
     public func entries() throws -> [HistoryEntry] {
         let db = try openIfNeeded()
         let operation = "read history"
@@ -142,7 +142,8 @@ public actor HistoryStore {
         notifyChanged()
     }
 
-    /// Yields after every change to the stored entries. Bursts coalesce into one element.
+    /// Sends one element after each change to the entries. If more changes occur before the
+    /// reader takes the element, the stream keeps only one element for all of them.
     public func changes() -> AsyncStream<Void> {
         let id = UUID()
         let (stream, continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
@@ -192,7 +193,7 @@ public actor HistoryStore {
         if !fileManager.fileExists(atPath: path),
            !fileManager.createFile(atPath: path, contents: nil, attributes: [.posixPermissions: 0o600])
         {
-            throw HistoryStoreError.openFailed(path: path, reason: "the file could not be created")
+            throw HistoryStoreError.openFailed(path: path, reason: "cannot create the file")
         }
 
         var handle: OpaquePointer?
@@ -259,7 +260,7 @@ public actor HistoryStore {
             if chmod(path, 0o600) != 0, errno != ENOENT {
                 throw HistoryStoreError.openFailed(
                     path: path,
-                    reason: "could not restrict permissions: \(String(cString: strerror(errno)))"
+                    reason: "cannot make the file private to the user (\(String(cString: strerror(errno))))"
                 )
             }
         }
@@ -345,8 +346,8 @@ public actor HistoryStore {
     }
 
     private func checkpoint(_ db: OpaquePointer) {
-        // Deleted text otherwise stays in the WAL file until SQLite's next automatic
-        // checkpoint. A failure here leaves the delete itself intact.
+        // Without this checkpoint, deleted text stays in the WAL file until SQLite runs its
+        // next automatic checkpoint. If the checkpoint fails, the delete is still complete.
         try? run(db, "PRAGMA wal_checkpoint(TRUNCATE)", operation: "checkpoint history")
     }
 

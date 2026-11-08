@@ -38,7 +38,7 @@ func historyListModelTests() -> [TestCase] {
             guard case .unavailable(let message) = model.state else {
                 throw TestFailure(description: "expected unavailable, got \(model.state)")
             }
-            try expect(message.hasPrefix("History is unavailable."), "message: \(message)")
+            try expect(message.hasPrefix("ReadBack cannot open"), "message: \(message)")
             try expect(message.contains(file.path), "message names the file: \(message)")
             try expectEqual(model.entries, [], "no entries while unavailable")
         },
@@ -78,7 +78,7 @@ func historyListModelTests() -> [TestCase] {
             await model.delete(HistoryEntry(id: 1, createdAt: Date(), source: .clipboard, text: "Gone"))
 
             let error = model.actionError ?? ""
-            try expect(error.hasPrefix("Could not delete the entry:"), "action error: \(error)")
+            try expect(error.hasPrefix("ReadBack did not delete the entry. "), "action error: \(error)")
         },
         TestCase(name: "history list replays an entry without adding a new one") { @MainActor in
             let file = makeHistoryFileURL()
