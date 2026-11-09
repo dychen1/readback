@@ -138,6 +138,16 @@ func historyRecorderTests() -> [TestCase] {
                 .agent(host: String(repeating: "x", count: HistorySource.maximumAgentHostLength)),
                 "length-limited host"
             )
+            // One character that holds a flood of combining marks.
+            let flood = "a" + String(repeating: "\u{0301}", count: 400_000)
+            guard case .agent(let host?) = HistorySource.agent(reportedHost: flood) else {
+                throw TestFailure(description: "a combining-mark flood should keep a short host")
+            }
+            try expectEqual(
+                host.unicodeScalars.count,
+                HistorySource.maximumAgentHostLength,
+                "the cap counts Unicode scalars, not characters"
+            )
         },
     ]
 }
