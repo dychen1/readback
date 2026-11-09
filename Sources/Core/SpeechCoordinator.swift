@@ -194,7 +194,8 @@ public actor SpeechCoordinator {
 
     /// Queues `chunks` in order, waiting while the pending-text limit is reached.
     /// Returns the pause to put before the next chunk. Throws `.sessionNotActive` as
-    /// soon as the session ends.
+    /// soon as the session ends, and `.queueLimitExceeded` for a chunk that is longer
+    /// than the limit and so can never fit.
     public func enqueueWaitingForRoom(
         _ chunks: [StreamedTextChunk],
         sessionID expectedSessionID: String,
@@ -215,7 +216,9 @@ public actor SpeechCoordinator {
                     )
                     nextPause = chunk.endsParagraph ? settings.paragraphPause : 0
                     break
-                } catch SpeechCoordinatorError.queueLimitExceeded {
+                } catch SpeechCoordinatorError.queueLimitExceeded
+                    where chunk.text.count <= maximumPendingCharacters
+                {
                     let clock = ContinuousClock()
                     try await clock.sleep(until: clock.now.advanced(by: .milliseconds(25)))
                 }

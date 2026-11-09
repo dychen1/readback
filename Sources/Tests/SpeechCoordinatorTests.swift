@@ -287,6 +287,26 @@ func speechCoordinatorTests() -> [TestCase] {
             try expectEqual(outcome, .completed, "long reading completes")
             try expectEqual(inputs, chunks.map(\.text), "all chunks in order")
         },
+        TestCase(name: "speech coordinator rejects a chunk that can never fit instead of waiting") {
+            let coordinator = SpeechCoordinator(
+                synthesizer: RecordingSynthesizer(),
+                player: RecordingAudioPlayer(),
+                maximumPendingCharacters: 12
+            )
+            try await coordinator.replaceSession(id: "oversized") { _ in }
+            let settings = SpeechSettings(voice: nil, languageCode: nil, synthesisSpeed: 1, paragraphPause: 0)
+
+            do {
+                _ = try await coordinator.enqueueWaitingForRoom(
+                    [StreamedTextChunk(text: "This chunk is longer than twelve.", endsParagraph: false)],
+                    sessionID: "oversized",
+                    settings: settings,
+                    pauseBefore: 0
+                )
+                throw TestFailure(description: "an oversized chunk must be rejected")
+            } catch SpeechCoordinatorError.queueLimitExceeded {}
+            await coordinator.cancel(sessionID: "oversized")
+        },
         TestCase(name: "speech coordinator cancellation stops playback") {
             let player = RecordingAudioPlayer()
             let coordinator = SpeechCoordinator(

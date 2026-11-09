@@ -77,6 +77,15 @@ func streamChunkerTests() -> [TestCase] {
                 "every character is kept in order"
             )
         },
+        TestCase(name: "chunker splits a long CJK paragraph") {
+            var chunker = StreamingTextChunker(maxCharacters: 250)
+            let paragraph = String(repeating: "これは長い段落です。", count: 300)
+
+            let chunks = chunker.append(paragraph + "\n\n次の段落")
+
+            try expect(chunks.allSatisfy { $0.text.count <= 250 }, "chunks stay within the limit")
+            try expectEqual(chunks.map(\.text).joined(), paragraph, "every character is kept in order")
+        },
         TestCase(name: "chunker flushes incomplete text after idle input") {
             var chunker = StreamingTextChunker(maxCharacters: 250)
             _ = chunker.append("No punctuation yet")
