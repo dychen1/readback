@@ -73,6 +73,8 @@ public actor SpeechCoordinator {
     private var playbackPaused = false
     private var worker: Task<Void, Never>?
     private var completionWaiters: [String: [CheckedContinuation<SpeechSessionOutcome, Never>]] = [:]
+    private var audioStarted = false
+    private var audioStartWaiters: [String: [CheckedContinuation<SpeechSessionOutcome?, Never>]] = [:]
     private var recentOutcomes: [(id: String, outcome: SpeechSessionOutcome)] = []
     private var pauseWaiters: [CheckedContinuation<Void, Never>] = []
     private var transitionTail: Task<Void, Never>?
@@ -258,6 +260,24 @@ public actor SpeechCoordinator {
         }
     }
 
+    /// Waits until the audio of `sessionID` starts. Returns `nil` once it plays, or how
+    /// the session ended if it ended first, for example `.failed` when no segment could be
+    /// synthesized or `.interrupted` when a newer reading replaced it.
+    public func waitUntilAudioStarts(sessionID expectedSessionID: String) async -> SpeechSessionOutcome? {
+        if let recent = recentOutcomes.last(where: { $0.id == expectedSessionID }) {
+            return recent.outcome
+        }
+        guard sessionID == expectedSessionID else {
+            return .interrupted
+        }
+        if audioStarted {
+            return nil
+        }
+        return await withCheckedContinuation { continuation in
+            audioStartWaiters[expectedSessionID, default: []].append(continuation)
+        }
+    }
+
     public func pause(sessionID expectedSessionID: String) async {
         guard sessionID == expectedSessionID, let eventSink, !playbackPaused else { return }
         let generation = sessionGeneration
@@ -321,6 +341,7 @@ public actor SpeechCoordinator {
         inputFinished = false
         queuePaused = false
         playbackPaused = false
+        audioStarted = false
         replayRecordingID = replayCache.beginRecording()
         publishActivity()
         await events(ReadBackServerEvent(type: .sessionReady, sessionID: id))
@@ -386,6 +407,16 @@ public actor SpeechCoordinator {
         }
         let waiters = completionWaiters.removeValue(forKey: id) ?? []
         waiters.forEach { $0.resume(returning: outcome) }
+        audioStarted = false
+        let startWaiters = audioStartWaiters.removeValue(forKey: id) ?? []
+        startWaiters.forEach { $0.resume(returning: outcome) }
+    }
+
+    private func markAudioStarted(sessionID id: String) {
+        guard !audioStarted else { return }
+        audioStarted = true
+        let waiters = audioStartWaiters.removeValue(forKey: id) ?? []
+        waiters.forEach { $0.resume(returning: nil) }
     }
 
     private static func finishedEvent(for session: EndedSession) -> ReadBackServerEvent {
@@ -473,6 +504,7 @@ public actor SpeechCoordinator {
                 await waitUntilResumed()
                 try Task.checkCancellation()
                 guard sessionID == expectedSessionID, sessionGeneration == generation else { return }
+                markAudioStarted(sessionID: expectedSessionID)
                 try await player.play(speech.clip)
                 try Task.checkCancellation()
                 guard sessionID == expectedSessionID, sessionGeneration == generation else { return }

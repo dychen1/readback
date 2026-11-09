@@ -35,7 +35,8 @@ func mcpEndpointTests() -> [TestCase] {
                 let play = try await client.callTool("play", arguments: ["text": "Hello from an agent."])
                 try expectEqual(play.isError, false, "play succeeds")
                 try expect(play.text.contains("Started reading"), "play message: \(play.text)")
-                await fixture.player.waitUntilPlaying()
+                let plays = await fixture.player.playCount()
+                try expectEqual(plays, 1, "audio already plays when play returns")
                 let active = await fixture.coordinator.hasActiveSession
                 try expect(active, "reading continues after play returns")
 
@@ -46,6 +47,14 @@ func mcpEndpointTests() -> [TestCase] {
 
                 let idleStop = try await client.callTool("stop")
                 try expectEqual(idleStop.text, "Nothing was playing.", "idle stop message")
+            }
+        },
+        TestCase(name: "mcp play reports a reading that fails before any audio plays") {
+            let fixture = MCPFixture(manager: APITestModelManager(failure: "synthesis exploded"))
+            try await fixture.test { client in
+                let play = try await client.callTool("play", arguments: ["text": "Hello from an agent."])
+                try expectEqual(play.isError, true, "a failed reading is a tool error")
+                try expect(play.text.contains("synthesis exploded"), "failure message: \(play.text)")
             }
         },
         TestCase(name: "mcp play replaces a reading started elsewhere") {

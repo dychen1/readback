@@ -76,15 +76,25 @@ struct ReadBackMCPTools: Sendable {
                     isError: true
                 )
             }
+            let id: String
             do {
-                _ = try await reader.start(ReadingRequest(text: text))
+                id = try await reader.start(ReadingRequest(text: text))
             } catch {
                 return Self.result(error.message, isError: true)
             }
-            return Self.result(
-                "Started reading \(text.count) characters aloud. "
-                    + "Playback continues in the background."
-            )
+            switch await coordinator.waitUntilAudioStarts(sessionID: id) {
+            case nil, .completed:
+                return Self.result(
+                    "Started reading \(text.count) characters aloud. "
+                        + "Playback continues in the background."
+                )
+            case .interrupted:
+                return Self.result("A newer reading replaced this one before it started.", isError: true)
+            case .stopped:
+                return Self.result("A stop request ended the reading before it started.", isError: true)
+            case .failed(let message):
+                return Self.result("Speech failed: \(message)", isError: true)
+            }
         case Self.stop.name:
             let stopped = await coordinator.stop()
             return Self.result(stopped ? "Stopped the current reading." : "Nothing was playing.")
