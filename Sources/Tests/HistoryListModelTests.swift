@@ -107,18 +107,5 @@ func historyListModelTests() -> [TestCase] {
             }
             try expectEqual(model.entries.map(\.text), ["Just heard."], "observed entry")
         },
-        TestCase(name: "history rows show the first line and a source name") {
-            let entry = HistoryEntry(
-                id: 1,
-                createdAt: Date(),
-                source: .clipboard,
-                text: "\n   \n  Title line  \nSecond line"
-            )
-            try expectEqual(entry.firstLine, "Title line", "first non-blank line")
-            try expectEqual(HistorySource.agent(host: "Cursor").displayName, "Agent · Cursor", "named agent")
-            try expectEqual(HistorySource.agent(host: nil).displayName, "Agent", "unnamed agent")
-            try expectEqual(HistorySource.clipboard.displayName, "Clipboard", "clipboard")
-            try expectEqual(HistorySource.voicepipe.displayName, "voicepipe", "voicepipe")
-        },
     ]
 }

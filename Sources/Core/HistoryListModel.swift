@@ -95,9 +95,10 @@ extension HistoryEntry {
 }
 
 extension HistorySource {
+    /// The agent host name when it is known, for example "Cursor".
     public var displayName: String {
         switch self {
-        case .agent(let host?): "Agent · \(host)"
+        case .agent(let host?): host
         case .agent(nil): "Agent"
         case .clipboard: "Clipboard"
         case .voicepipe: "voicepipe"
