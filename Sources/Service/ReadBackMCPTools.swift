@@ -68,7 +68,8 @@ struct ReadBackMCPTools: Sendable {
     let coordinator: SpeechCoordinator
 
     /// - Parameter clientName: The name the calling host sent in `initialize`, if known.
-    ///   History shows a known host by its display name, for example "Claude Code".
+    ///   History shows a known host by its display name, for example "Claude Code", only
+    ///   when the name matches exactly.
     func call(_ parameters: CallTool.Parameters, clientName: String?) async throws -> CallTool.Result {
         switch parameters.name {
         case Self.play.name:
@@ -83,7 +84,7 @@ struct ReadBackMCPTools: Sendable {
                 id = try await reader.start(
                     ReadingRequest(text: text),
                     historySource: .agent(
-                        reportedHost: clientName.map { MCPHost(clientName: $0)?.displayName ?? $0 }
+                        reportedHost: clientName.map { MCPHost.historyLabel(clientName: $0) }
                     )
                 )
             } catch {

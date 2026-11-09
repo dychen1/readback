@@ -15,6 +15,15 @@ public enum MCPHost: String, CaseIterable, Codable, Sendable {
         }
     }
 
+    /// The exact client name the host sends in `initialize`.
+    public var clientName: String {
+        switch self {
+        case .cursor: "cursor-vscode"
+        case .claudeCode: "claude-code"
+        case .codex: "codex-mcp-client"
+        }
+    }
+
     /// Recognizes the client name a host sends in `initialize`, such as
     /// `cursor-vscode`, `claude-code`, or `codex-mcp-client`.
     public init?(clientName: String) {
@@ -28,6 +37,15 @@ public enum MCPHost: String, CaseIterable, Codable, Sendable {
         } else {
             return nil
         }
+    }
+}
+
+extension MCPHost {
+    /// The history label for an MCP client name. Only an exact known name gets the display
+    /// name of its host. A name that only contains one, such as `not-claude-code`, stays as
+    /// sent, so it cannot pass as that host.
+    static func historyLabel(clientName: String) -> String {
+        allCases.first { $0.clientName == clientName }?.displayName ?? clientName
     }
 }
 

@@ -113,6 +113,13 @@ func historyPresentationTests() -> [TestCase] {
             try expectEqual(HistorySource.agent(host: "Cursor").displayName, "Cursor", "named agent")
             try expectEqual(HistorySource.agent(host: nil).displayName, "Agent", "unnamed agent")
             try expectEqual(HistorySource.clipboard.displayName, "Clipboard", "clipboard")
+            for builtIn in ["Clipboard", "clipboard", "voicepipe", "Agent"] {
+                try expectEqual(
+                    HistorySource.agent(host: builtIn).displayName,
+                    "Agent · \(builtIn)",
+                    "an agent named \(builtIn) does not pass as a built-in source"
+                )
+            }
             try expectEqual(HistorySource.voicepipe.displayName, "voicepipe", "voicepipe")
             try expectEqual(HistorySource.agent(host: nil).symbolName, "text.bubble", "agent symbol")
             try expectEqual(HistorySource.clipboard.symbolName, "clipboard", "clipboard symbol")

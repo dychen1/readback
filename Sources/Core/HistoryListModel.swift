@@ -226,13 +226,21 @@ extension HistoryEntry {
 }
 
 extension HistorySource {
-    /// The agent host name when it is known, for example "Cursor".
+    /// The agent host name when it is known, for example "Cursor". A host name that equals
+    /// the name of another source, such as "Clipboard", shows as "Agent · Clipboard", so an
+    /// agent cannot pass as that source.
     public var displayName: String {
         switch self {
-        case .agent(let host?): host
-        case .agent(nil): "Agent"
+        case .agent(let host?):
+            Self.builtInNames.contains { $0.caseInsensitiveCompare(host) == .orderedSame }
+                ? "\(Self.agentName) · \(host)"
+                : host
+        case .agent(nil): Self.agentName
         case .clipboard: "Clipboard"
         case .voicepipe: "voicepipe"
         }
     }
+
+    private static let agentName = "Agent"
+    private static let builtInNames = [agentName, clipboard.displayName, voicepipe.displayName]
 }

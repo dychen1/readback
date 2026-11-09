@@ -104,7 +104,11 @@ func mcpEndpointTests() -> [TestCase] {
             let store = HistoryStore(fileURL: file)
             let fixture = MCPFixture(history: HistoryRecorder(store: store))
             try await fixture.test { client in
-                for (name, text) in [("codex-mcp-client", "From Codex."), ("my-agent", "From my agent.")] {
+                for (name, text) in [
+                    ("codex-mcp-client", "From Codex."),
+                    ("my-agent", "From my agent."),
+                    ("not-claude-code", "From a lookalike."),
+                ] {
                     let initialize = try await client.onNewConnection().rpc(
                         "initialize",
                         params: [
@@ -132,16 +136,23 @@ func mcpEndpointTests() -> [TestCase] {
                 try expectEqual(anonymous.isError, false, "play without a session")
             }
             await fixture.coordinator.stop()
-            let entries = try await store.entries()
-            try expectEqual(
-                entries.map(\.text),
-                ["From an unknown host.", "From an old session.", "From my agent.", "From Codex."],
-                "agent texts"
-            )
+            let expectedTexts = [
+                "From an unknown host.", "From an old session.", "From a lookalike.", "From my agent.", "From Codex.",
+            ]
+            // Each reading saves its entry in the background after play returns.
+            var entries = try await store.entries()
+            for _ in 0..<200 where entries.count < expectedTexts.count {
+                try await wait(for: .milliseconds(10))
+                entries = try await store.entries()
+            }
+            try expectEqual(entries.map(\.text), expectedTexts, "agent texts")
             try expectEqual(
                 entries.map(\.source),
-                [.agent(host: nil), .agent(host: nil), .agent(host: "my-agent"), .agent(host: "Codex")],
-                "hosts come from initialize of the same session"
+                [
+                    .agent(host: nil), .agent(host: nil), .agent(host: "not-claude-code"),
+                    .agent(host: "my-agent"), .agent(host: "Codex"),
+                ],
+                "hosts come from initialize of the same session, and only exact names map to a host"
             )
         },
         TestCase(name: "mcp client registry keeps the newest sessions") {

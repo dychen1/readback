@@ -85,7 +85,7 @@ ReadBack serves an [MCP](https://modelcontextprotocol.io) server at `http://127.
 - `play(text)` reads the text aloud. It returns as soon as playback starts and replaces any current reading.
 - `stop()` ends the current reading.
 
-History shows the name that the host sends when it connects. For example, an entry from Claude Code shows "Claude Code". The response to `initialize` has an `Mcp-Session-Id` header. ReadBack uses this session ID only to find the host name when a `play` call arrives.
+History shows the name that the host sends when it connects. Only the exact names that Claude Code, Codex, and Cursor send show as "Claude Code", "Codex", and "Cursor". Other names show as sent. The response to `initialize` has an `Mcp-Session-Id` header. ReadBack uses this session ID only to find the host name when a `play` call arrives.
 
 **Settings → Agent Read-Back** shows the setup step for each host, with the port that ReadBack uses. It also shows when each host last connected. ReadBack never edits the configuration of another app. You do each step yourself:
 
@@ -247,7 +247,7 @@ curl \
 
 `speed` must be between `0.5` and `2`.
 
-An agent can send its name in an optional `X-ReadBack-Client` header, for example `X-ReadBack-Client: Cursor`. The History window shows this name as the source of the entry.
+An agent can send its name in an optional `X-ReadBack-Client` header, for example `X-ReadBack-Client: Cursor`. The History window shows this name as the source of the entry. A name that equals a built-in source, such as `Clipboard`, shows as "Agent · Clipboard".
 
 Clients cannot list, install, remove, load, or select models. A speech request that contains a `model` key returns HTTP 400 with `model_selection_not_allowed`. Change the active model in the ReadBack app.
 
