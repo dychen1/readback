@@ -144,9 +144,19 @@ ReadBack removes common Markdown markers while it keeps readable text and paragr
 
 ### History
 
-Choose **History…** in the popover to see the last 200 read-backs, newest first. Each entry shows the time, the source, and the first line of text. The source is an agent, the clipboard, or voicepipe.
+Choose **History…** in the popover to see the last 200 read-backs, newest first. The list on the left groups entries by day. Each row shows the first sentence, the source, and the time. The source is the agent name (for example Cursor), the clipboard, or voicepipe. The right side shows the full text of the selected entry.
 
-**Play** stops the current reading and reads the entry again with the current voice. A replay does not add a new entry. You can delete one entry, or choose **Clear History…** to delete all entries. ReadBack does not save voice previews.
+**Play** stops the current reading and reads the entry again with the current voice. A replay does not add a new entry. **Delete** removes the selected entry at once. **Clear History…** asks for confirmation, then deletes all entries. ReadBack does not save voice previews.
+
+| Key | Action |
+|---|---|
+| ↑ and ↓ | Select the previous or next entry. |
+| Space | Play the selected entry. If it plays, stop it. |
+| Return | Play the selected entry from the start. |
+| Delete | Delete the selected entry. |
+| Esc | Stop the current reading. |
+
+You can also double-click a row to play it, or right-click a row to play or delete it.
 
 
 ### Add a local model
