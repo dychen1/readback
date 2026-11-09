@@ -9,6 +9,7 @@ final class ClientDisconnectSignal: @unchecked Sendable {
     private var left = false
     private var action: (@Sendable () -> Void)?
 
+    /// Whether the client already left.
     var hasLeft: Bool {
         lock.withLock { left }
     }
