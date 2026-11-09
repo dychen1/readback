@@ -48,9 +48,9 @@ public struct SpeechPlaybackState: Equatable, Sendable {
     /// The history entry of this reading, if it has one.
     public internal(set) var historyEntryID: Int64?
     public internal(set) var phase: Phase
-    /// The chunk that plays now, as character offsets into the text of the reading. Offsets
-    /// start at the first character that is not whitespace. The value is `nil` until the
-    /// first chunk starts, and it keeps the last chunk during pauses and between chunks.
+    /// The chunk that plays now, as Unicode scalar offsets into the text of the reading.
+    /// Offsets start at the first character that is not whitespace. The value is `nil` until
+    /// the first chunk starts, and it keeps the last chunk during pauses and between chunks.
     public internal(set) var chunkRange: Range<Int>?
 
     public init(

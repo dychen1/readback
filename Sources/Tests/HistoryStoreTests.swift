@@ -104,6 +104,20 @@ func historyStoreTests() -> [TestCase] {
             let entries = try await store.entries()
             try expectEqual(entries.map(\.text), ["Entry 5", "Entry 4", "Entry 3"], "pruned entries")
         },
+        TestCase(name: "history store leaves no text of pruned entries on disk") {
+            let file = makeHistoryFileURL()
+            defer { removeHistoryDirectory(of: file) }
+            let store = HistoryStore(fileURL: file, maximumEntries: 1)
+
+            try await store.insert("PRUNED-SECRET-TEXT", source: .clipboard, at: Date())
+            try await store.insert("Kept entry", source: .clipboard, at: Date())
+
+            let marker = Data("PRUNED-SECRET-TEXT".utf8)
+            for suffix in ["", "-wal"] {
+                let bytes = (try? Data(contentsOf: URL(fileURLWithPath: file.path + suffix))) ?? Data()
+                try expect(bytes.range(of: marker) == nil, "pruned text is gone from history.sqlite\(suffix)")
+            }
+        },
         TestCase(name: "history store deletes one entry and clears all without reusing ids") {
             let file = makeHistoryFileURL()
             defer { removeHistoryDirectory(of: file) }

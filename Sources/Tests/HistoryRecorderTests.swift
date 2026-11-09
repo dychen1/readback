@@ -99,6 +99,12 @@ func historyRecorderTests() -> [TestCase] {
             try expectEqual(restart, 42, "restart keeps the entry of the reading")
             try expectEqual(restartWithoutEntry, nil, "restart of a preview has no entry")
         },
+        TestCase(name: "a restarted reading keeps its history entry") {
+            try expectEqual(AppSpeechPurpose.clipboardRead.restarted, .clipboardRead, "unsaved clipboard read")
+            try expectEqual(AppSpeechPurpose.voicePreview.restarted, .settingsRestart(nil), "voice preview")
+            try expectEqual(AppSpeechPurpose.historyReplay(5).restarted, .settingsRestart(5), "replay")
+            try expectEqual(AppSpeechPurpose.settingsRestart(5).restarted, .settingsRestart(5), "second restart")
+        },
         TestCase(name: "history entries do not keep leading whitespace") {
             let file = makeHistoryFileURL()
             defer { removeHistoryDirectory(of: file) }
@@ -120,6 +126,11 @@ func historyRecorderTests() -> [TestCase] {
                 HistorySource.agent(reportedHost: "  Claude\u{7} Code\n"),
                 .agent(host: "Claude Code"),
                 "trimmed host without control characters"
+            )
+            try expectEqual(
+                HistorySource.agent(reportedHost: "\u{202E}Cursor\u{200B}\u{2028}"),
+                .agent(host: "Cursor"),
+                "host without bidirectional overrides or invisible characters"
             )
             let long = String(repeating: "x", count: 100)
             try expectEqual(

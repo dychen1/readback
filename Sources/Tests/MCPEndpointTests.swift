@@ -98,15 +98,14 @@ func mcpEndpointTests() -> [TestCase] {
                 try expect(result.text.contains("switching"), "switch message: \(result.text)")
             }
         },
-        TestCase(name: "mcp play saves history with the host that initialized the connection") {
+        TestCase(name: "mcp play saves history with the host that started the session") {
             let file = makeHistoryFileURL()
             defer { removeHistoryDirectory(of: file) }
             let store = HistoryStore(fileURL: file)
             let fixture = MCPFixture(history: HistoryRecorder(store: store))
             try await fixture.test { client in
                 for (name, text) in [("codex-mcp-client", "From Codex."), ("my-agent", "From my agent.")] {
-                    let connection = client.onNewConnection()
-                    _ = try await connection.rpc(
+                    let initialize = try await client.onNewConnection().rpc(
                         "initialize",
                         params: [
                             "protocolVersion": "2025-06-18",
@@ -114,35 +113,49 @@ func mcpEndpointTests() -> [TestCase] {
                             "clientInfo": ["name": name, "version": "1.0"],
                         ]
                     )
-                    let play = try await connection.callTool("play", arguments: ["text": text])
+                    guard let sessionID = initialize.sessionID else {
+                        throw TestFailure(description: "initialize from \(name) returned no session ID")
+                    }
+                    let play = try await client.onNewConnection()
+                        .callTool("play", arguments: ["text": text], headers: ["Mcp-Session-Id": sessionID])
                     try expectEqual(play.isError, false, "play from \(name)")
                 }
-                let anonymous = try await client.onNewConnection()
-                    .callTool("play", arguments: ["text": "From an unknown host."])
-                try expectEqual(anonymous.isError, false, "play without initialize")
+                let unknown = try await client.callTool(
+                    "play",
+                    arguments: ["text": "From an old session."],
+                    headers: ["Mcp-Session-Id": "not-a-session"]
+                )
+                try expectEqual(unknown.isError, false, "play with an unknown session")
+                let list = try await client.rpc("tools/list")
+                try expectEqual(list.sessionID, nil, "only initialize starts a session")
+                let anonymous = try await client.callTool("play", arguments: ["text": "From an unknown host."])
+                try expectEqual(anonymous.isError, false, "play without a session")
             }
             await fixture.coordinator.stop()
             let entries = try await store.entries()
             try expectEqual(
                 entries.map(\.text),
-                ["From an unknown host.", "From my agent.", "From Codex."],
+                ["From an unknown host.", "From an old session.", "From my agent.", "From Codex."],
                 "agent texts"
             )
             try expectEqual(
                 entries.map(\.source),
-                [.agent(host: nil), .agent(host: "my-agent"), .agent(host: "Codex")],
-                "hosts come from initialize on the same connection"
+                [.agent(host: nil), .agent(host: nil), .agent(host: "my-agent"), .agent(host: "Codex")],
+                "hosts come from initialize of the same session"
             )
         },
-        TestCase(name: "mcp client registry forgets a closed connection") {
+        TestCase(name: "mcp client registry keeps the newest sessions") {
             let registry = MCPClientRegistry()
-            let connection = ObjectIdentifier(registry)
-            await registry.remember(clientName: "claude-code\u{0}", connection: connection)
-            let remembered = await registry.clientName(connection: connection)
+            await registry.remember(clientName: "claude-code\u{0}", sessionID: "first")
+            let remembered = await registry.clientName(sessionID: "first")
             try expectEqual(remembered, "claude-code", "control characters removed")
-            await registry.forget(connection: connection)
-            let forgotten = await registry.clientName(connection: connection)
-            try expectEqual(forgotten, nil, "closed connection has no client")
+            for index in 0..<64 {
+                await registry.remember(clientName: "client \(index)", sessionID: "session \(index)")
+            }
+            let evicted = await registry.clientName(sessionID: "first")
+            let newest = await registry.clientName(sessionID: "session 63")
+            try expectEqual(evicted, nil, "the oldest session is dropped")
+            try expectEqual(newest, "client 63", "the newest session is kept")
         },
         TestCase(name: "mcp rejects an unknown tool with a protocol error") {
             let fixture = MCPFixture()
@@ -266,6 +279,7 @@ private struct MCPFixture {
 private struct MCPResponse: @unchecked Sendable {
     let status: Int
     let json: [String: Any]?
+    let sessionID: String?
 
     var result: [String: Any]? { json?["result"] as? [String: Any] }
 }
@@ -279,11 +293,9 @@ private struct MCPTestClient: Sendable {
     let port: Int?
     var session: URLSession = .shared
 
-    /// A client whose requests share one new HTTP connection, as a host's requests do.
+    /// A client that sends its requests on a new HTTP connection.
     func onNewConnection() -> MCPTestClient {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.httpMaximumConnectionsPerHost = 1
-        return MCPTestClient(port: port, session: URLSession(configuration: configuration))
+        MCPTestClient(port: port, session: URLSession(configuration: .ephemeral))
     }
 
     func rpc(
@@ -296,8 +308,12 @@ private struct MCPTestClient: Sendable {
         return try await raw(method: "POST", body: body, headers: extra)
     }
 
-    func callTool(_ name: String, arguments: [String: Any] = [:]) async throws -> ToolResult {
-        let response = try await rpc("tools/call", params: ["name": name, "arguments": arguments])
+    func callTool(
+        _ name: String,
+        arguments: [String: Any] = [:],
+        headers: [String: String] = [:]
+    ) async throws -> ToolResult {
+        let response = try await rpc("tools/call", params: ["name": name, "arguments": arguments], headers: headers)
         guard let result = response.result else {
             throw TestFailure(description: "tools/call \(name) returned no result: \(String(describing: response.json))")
         }
@@ -321,8 +337,12 @@ private struct MCPTestClient: Sendable {
             request.httpBody = Data(body.utf8)
         }
         let (data, response) = try await session.data(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let httpResponse = response as? HTTPURLResponse
         let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        return MCPResponse(status: status, json: json)
+        return MCPResponse(
+            status: httpResponse?.statusCode ?? 0,
+            json: json,
+            sessionID: httpResponse?.value(forHTTPHeaderField: "Mcp-Session-Id")
+        )
     }
 }

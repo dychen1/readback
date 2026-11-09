@@ -165,6 +165,14 @@ func historyPresentationTests() -> [TestCase] {
                 "pause keeps the spoken range"
             )
         },
+        TestCase(name: "history converts scalar offsets to character offsets") {
+            let text = entry(1, Date(), "Cafe\u{301} 👩‍👩‍👧 ok")
+            try expectEqual(text.characterRange(forScalarRange: 0..<5), 0..<4, "combining accent")
+            try expectEqual(text.characterRange(forScalarRange: 6..<11), 5..<6, "emoji family")
+            try expectEqual(text.characterRange(forScalarRange: 12..<14), 7..<9, "word after both")
+            try expectEqual(text.characterRange(forScalarRange: 4..<8), 3..<6, "offsets inside characters widen")
+            try expectEqual(text.characterRange(forScalarRange: 12..<99), 7..<9, "offsets past the end")
+        },
         TestCase(name: "history progress counts the text before the spoken range") {
             let none = HistoryPlayback(entryID: 1, phase: .playing)
             try expectEqual(none.progress(textLength: 100), nil, "no progress without a range")

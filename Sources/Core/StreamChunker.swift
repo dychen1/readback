@@ -3,8 +3,9 @@ import Foundation
 public struct StreamedTextChunk: Equatable, Sendable {
     public let text: String
     public let endsParagraph: Bool
-    /// The position of `text` in all the text that the chunker received, as character
-    /// offsets. Offsets start at the first character that is not whitespace.
+    /// The position of `text` in all the text that the chunker received, as Unicode scalar
+    /// offsets. Offsets start at the first character that is not whitespace. Scalar counts
+    /// add up across `append` calls, also when one character arrives in two calls.
     public let sourceRange: Range<Int>?
 
     public init(text: String, endsParagraph: Bool, sourceRange: Range<Int>? = nil) {
@@ -17,9 +18,9 @@ public struct StreamedTextChunk: Equatable, Sendable {
 public struct StreamingTextChunker: Sendable {
     private var buffer = ""
     private let maxCharacters: Int
-    /// The number of received characters before `buffer`, from the first character that is
-    /// not whitespace.
-    private var consumedCharacters = 0
+    /// The number of received Unicode scalars before `buffer`, from the first character that
+    /// is not whitespace.
+    private var consumedScalars = 0
     private var hasReceivedText = false
 
     public init(maxCharacters: Int = 250) {
@@ -39,7 +40,7 @@ public struct StreamingTextChunker: Sendable {
             if let chunk = makeChunk(buffer[..<boundary.contentEnd], endsParagraph: boundary.endsParagraph) {
                 chunks.append(chunk)
             }
-            consumedCharacters += buffer.distance(from: buffer.startIndex, to: boundary.consumedEnd)
+            consumedScalars += buffer[..<boundary.consumedEnd].unicodeScalars.count
             buffer.removeSubrange(buffer.startIndex..<boundary.consumedEnd)
             trimLeadingWhitespace()
         }
@@ -49,23 +50,23 @@ public struct StreamingTextChunker: Sendable {
 
     public mutating func flush() -> StreamedTextChunk? {
         let chunk = makeChunk(buffer[...], endsParagraph: false)
-        consumedCharacters += buffer.count
+        consumedScalars += buffer.unicodeScalars.count
         buffer.removeAll(keepingCapacity: true)
         return chunk
     }
 
     private func makeChunk(_ raw: Substring, endsParagraph: Bool) -> StreamedTextChunk? {
-        let leading = raw.prefix(while: \.isWhitespace).count
-        var text = raw.dropFirst(leading)
+        let leading = raw.prefix(while: \.isWhitespace)
+        var text = raw.dropFirst(leading.count)
         while let last = text.last, last.isWhitespace {
             text.removeLast()
         }
         guard !text.isEmpty else { return nil }
-        let start = consumedCharacters + leading
+        let start = consumedScalars + leading.unicodeScalars.count
         return StreamedTextChunk(
             text: String(text),
             endsParagraph: endsParagraph,
-            sourceRange: start..<(start + text.count)
+            sourceRange: start..<(start + text.unicodeScalars.count)
         )
     }
 
@@ -148,7 +149,7 @@ public struct StreamingTextChunker: Sendable {
     private mutating func trimLeadingWhitespace() {
         while let first = buffer.first, first.isWhitespace {
             buffer.removeFirst()
-            consumedCharacters += 1
+            consumedScalars += first.unicodeScalars.count
         }
     }
 

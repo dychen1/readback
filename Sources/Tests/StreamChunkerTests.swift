@@ -140,20 +140,21 @@ func streamChunkerTests() -> [TestCase] {
             )
         },
         TestCase(name: "chunker ranges point at each chunk in the received text") {
-            let text = "  \n\nCafe\u{301} au lait. 👩‍👩‍👧 Family time!\n\n"
+            let text = "  \n\nCafe\u{301} au lait. 👩‍👩‍👧 Family time!\r\n\r\n"
                 + "これは長い段落です。Second   paragraph with   spaces.\n\n\n"
-                + String(repeating: "word ", count: 80) + "end"
-            let characters = Array(text)
-            for pieceLength in [1, 3, 7, 40, characters.count] {
+                + String(repeating: "word ", count: 80) + "end."
+            let scalars = Array(text.unicodeScalars)
+            // Pieces split at scalars, so one character can arrive in two appends.
+            for pieceLength in [1, 2, 3, 7, 40, scalars.count] {
                 var chunker = StreamingTextChunker(maxCharacters: 60)
                 var chunks: [StreamedTextChunk] = []
-                for start in stride(from: 0, to: characters.count, by: pieceLength) {
-                    let end = min(start + pieceLength, characters.count)
-                    chunks += chunker.append(String(characters[start..<end]))
+                for start in stride(from: 0, to: scalars.count, by: pieceLength) {
+                    let end = min(start + pieceLength, scalars.count)
+                    chunks += chunker.append(String(String.UnicodeScalarView(scalars[start..<end])))
                 }
                 chunks += chunker.flush().map { [$0] } ?? []
 
-                let spoken = Array(text.drop(while: \.isWhitespace))
+                let spoken = Array(text.drop(while: \.isWhitespace).unicodeScalars)
                 var previousEnd = 0
                 for chunk in chunks {
                     guard let range = chunk.sourceRange else {
@@ -161,13 +162,13 @@ func streamChunkerTests() -> [TestCase] {
                     }
                     try expect(range.lowerBound >= previousEnd, "ranges keep their order (piece \(pieceLength))")
                     try expectEqual(
-                        String(spoken[range]),
+                        String(String.UnicodeScalarView(spoken[range])),
                         chunk.text,
                         "range text for piece length \(pieceLength)"
                     )
                     previousEnd = range.upperBound
                 }
-                try expectEqual(previousEnd, spoken.count, "last range ends at the last character")
+                try expectEqual(previousEnd, spoken.count, "last range ends at the last scalar")
             }
         },
     ]

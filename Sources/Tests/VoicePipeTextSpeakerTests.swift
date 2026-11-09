@@ -71,8 +71,37 @@ private final class StubVoicePipeClientFactory: @unchecked Sendable {
     }
 }
 
+private actor RecordingVoicePipeSessionClient: VoicePipeSessionClient {
+    private(set) var appended: [String] = []
+
+    var sessionID: String? { "recorded-session" }
+    func connect() async throws {}
+    func append(_ text: String) async throws { appended.append(text) }
+    func finish() async throws {}
+    func cancel() async {}
+    func pause() async throws {}
+    func resume() async throws {}
+}
+
 func voicePipeTextSpeakerTests() -> [TestCase] {
     [
+        TestCase(name: "voicepipe speaker sends long text in pieces that fit one frame") {
+            let client = RecordingVoicePipeSessionClient()
+            let speaker = VoicePipeTextSpeaker { client }
+            let text = String(repeating: "Long text with é and 👩‍👩‍👧 in it. ", count: 900)
+            let readySession = SessionBox()
+
+            try await speaker.speak(text, requestID: UUID()) { sessionID in
+                await readySession.set(sessionID)
+            }
+
+            let pieces = await client.appended
+            try expect(pieces.count > 1, "long text is split, got \(pieces.count) piece(s)")
+            try expect(pieces.allSatisfy { $0.utf8.count <= 2_000 }, "each piece fits the limit")
+            try expectEqual(pieces.joined(), text, "pieces keep every character in order")
+            let session = await readySession.value
+            try expectEqual(session, "recorded-session", "onReady gets the session ID")
+        },
         TestCase(name: "stale clipboard cancellation cannot stop a newer request") {
             let oldClient = StubVoicePipeSessionClient()
             let newClient = StubVoicePipeSessionClient()
@@ -142,4 +171,9 @@ func voicePipeTextSpeakerTests() -> [TestCase] {
             try expectEqual(factory.callCount(), 0, "client factory calls")
         },
     ]
+}
+
+private actor SessionBox {
+    private(set) var value: String?
+    func set(_ value: String?) { self.value = value }
 }

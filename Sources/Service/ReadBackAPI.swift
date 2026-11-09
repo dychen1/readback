@@ -84,6 +84,8 @@ public final class ReadBackAPI: @unchecked Sendable {
     private let reader: ReadingStarter
     private let mcp: MCPEndpoint
     private let history: HistoryRecorder?
+    /// A random value that only this process knows. A stream skips history only with it.
+    private let historySkipKey = UUID().uuidString
     private let encoder = JSONEncoder()
 
     public init(
@@ -230,15 +232,9 @@ public final class ReadBackAPI: @unchecked Sendable {
             }
         }
 
-        router.post("/mcp") { [mcp] request, context in
-            try await mcp.handle(request, channel: context.channel)
-        }
-        router.get("/mcp") { [mcp] request, context in
-            try await mcp.handle(request, channel: context.channel)
-        }
-        router.delete("/mcp") { [mcp] request, context in
-            try await mcp.handle(request, channel: context.channel)
-        }
+        router.post("/mcp") { [mcp] request, _ in try await mcp.handle(request) }
+        router.get("/mcp") { [mcp] request, _ in try await mcp.handle(request) }
+        router.delete("/mcp") { [mcp] request, _ in try await mcp.handle(request) }
 
         router.ws("/v1/readback/stream", shouldUpgrade: { [self] request, _ in
             isOriginAllowed(request) ? .upgrade([:]) : .dontUpgrade
@@ -424,10 +420,14 @@ public final class ReadBackAPI: @unchecked Sendable {
         )
     }
 
-    /// Returns the stream URL for the app's own connection. The app records clipboard reads
-    /// itself and skips previews and replays. This URL tells the server not to record the stream.
-    public static func historySkippingStreamURL(host: String, port: Int) -> URL? {
-        URL(string: "ws://\(host):\(port)/v1/readback/stream?history=skip")
+    /// The stream URL for the app's own connection. The app records clipboard reads itself
+    /// and skips previews and replays. This URL tells the server not to record the stream. It
+    /// has a key that only this process knows, so other clients cannot skip history.
+    public var historySkippingStreamURL: URL? {
+        URL(
+            string: "ws://\(configuration.publicHost):\(configuration.publicPort)/v1/readback/stream"
+                + "?history=skip&key=\(historySkipKey)"
+        )
     }
 
     private static func agentSource(_ request: Request) -> HistorySource {
@@ -436,7 +436,9 @@ public final class ReadBackAPI: @unchecked Sendable {
     }
 
     private func makeHistoryStream(for request: Request) -> HistoryStreamRecording {
-        guard let history, request.uri.queryParameters.get("history") != "skip" else {
+        guard let history else { return .disabled }
+        let query = request.uri.queryParameters
+        if query.get("history") == "skip", query.get("key") == historySkipKey {
             return .disabled
         }
         return history.stream(source: .voicepipe)

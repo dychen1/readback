@@ -59,6 +59,22 @@ public final class HistoryListModel: ObservableObject {
         selectedEntry.map(isPlaying) ?? false
     }
 
+    /// The part of `entry` that plays now, as character offsets into its text. It is `nil`
+    /// when `entry` does not play or no chunk of it plays yet.
+    public func spokenRange(in entry: HistoryEntry) -> Range<Int>? {
+        guard let playback, playback.entryID == entry.id, let range = playback.spokenRange else {
+            return nil
+        }
+        return entry.characterRange(forScalarRange: range)
+    }
+
+    /// How much of `entry` played, from 0 to 1, or `nil` when `entry` does not play or no
+    /// chunk of it plays yet.
+    public func progress(in entry: HistoryEntry) -> Double? {
+        guard let playback, playback.entryID == entry.id else { return nil }
+        return playback.progress(textLength: entry.text.unicodeScalars.count)
+    }
+
     public func rowIndicator(for entry: HistoryEntry) -> HistoryRowIndicator {
         HistoryRowIndicator(playback: playback, entryID: entry.id)
     }

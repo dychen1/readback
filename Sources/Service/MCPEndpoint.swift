@@ -1,7 +1,6 @@
 import Foundation
 import Hummingbird
 import MCP
-import NIOCore
 
 /// Serves MCP over HTTP at `/mcp` with the SDK's stateless transport.
 ///
@@ -9,6 +8,10 @@ import NIOCore
 /// only once per server (swift-sdk #144, #219), so a long-lived server would reject
 /// every host reconnect. Also, the stateless transport keys in-flight requests by the
 /// JSON-RPC id that the client chooses, and those ids collide across clients (#265).
+///
+/// The response to `initialize` has an `Mcp-Session-Id` header. Clients send it back on
+/// later requests, so a `play` call can name the client that started the session. The
+/// endpoint keeps no other session state and accepts requests without the header.
 struct MCPEndpoint: Sendable {
     /// 1 MiB holds any text an agent should read aloud, and bounds memory per request.
     static let maximumBodySize = 1 << 20
@@ -36,9 +39,7 @@ struct MCPEndpoint: Sendable {
         ])
     }
 
-    /// - Parameter channel: The HTTP connection of the request. A client that sends
-    ///   `initialize` on a connection is the client of later requests on it.
-    func handle(_ request: Request, channel: any Channel) async throws -> Response {
+    func handle(_ request: Request) async throws -> Response {
         let body = try await request.body.collect(upTo: Self.maximumBodySize)
         var headers: [String: String] = [:]
         for field in request.headers {
@@ -57,15 +58,16 @@ struct MCPEndpoint: Sendable {
             path: request.uri.path
         )
 
-        let connection = ObjectIdentifier(channel)
+        var clientName: String?
+        if let requestSessionID = headers[HTTPHeaderName.sessionID.lowercased()] {
+            clientName = await clients.clientName(sessionID: requestSessionID)
+        }
+        let newSessionID = UUID().uuidString
         let transport = StatelessHTTPServerTransport(validationPipeline: validationPipeline)
-        let server = await makeServer(clientName: clients.clientName(connection: connection))
+        let server = await makeServer(clientName: clientName)
         try await server.start(transport: transport) { [clients] client, _ in
             await clients.record(clientName: client.name, version: client.version)
-            await clients.remember(clientName: client.name, connection: connection)
-            channel.closeFuture.whenComplete { _ in
-                Task { await clients.forget(connection: connection) }
-            }
+            await clients.remember(clientName: client.name, sessionID: newSessionID)
         }
         let mcpResponse = await transport.handleRequest(mcpRequest)
         await server.stop()
@@ -75,6 +77,9 @@ struct MCPEndpoint: Sendable {
             if let fieldName = HTTPFields.Element.Name(name) {
                 fields[fieldName] = value
             }
+        }
+        if mcpResponse.statusCode == 200, await clients.clientName(sessionID: newSessionID) != nil {
+            fields[HTTPFields.Element.Name(HTTPHeaderName.sessionID)!] = newSessionID
         }
         let responseBody = mcpResponse.bodyData.map {
             ResponseBody(byteBuffer: ByteBuffer(bytes: $0))

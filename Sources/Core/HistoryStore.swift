@@ -65,7 +65,7 @@ public actor HistoryStore {
     public func insert(_ text: String, source: HistorySource, at date: Date) throws -> Int64 {
         let db = try openIfNeeded()
         let operation = "save a history entry"
-        let id = try transaction(db, operation: operation) {
+        let (id, prunedOldEntries) = try transaction(db, operation: operation) {
             try run(
                 db,
                 "INSERT INTO entries (created_at, source, agent_host, text) VALUES (?, ?, ?, ?)",
@@ -79,7 +79,10 @@ public actor HistoryStore {
                 [.integer(Int64(maximumEntries))],
                 operation: operation
             )
-            return id
+            return (id, sqlite3_changes(db) > 0)
+        }
+        if prunedOldEntries {
+            checkpoint(db)
         }
         notifyChanged()
         return id

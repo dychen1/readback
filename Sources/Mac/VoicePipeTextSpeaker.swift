@@ -16,6 +16,10 @@ extension VoicePipeClient: VoicePipeSessionClient {}
 public actor VoicePipeTextSpeaker: ClipboardSpeechPlaying {
     public typealias ClientFactory = @Sendable () -> any VoicePipeSessionClient
 
+    /// The most UTF-8 bytes of text that one `text.append` message carries. JSON escapes can
+    /// make a message up to six times larger, and the server accepts frames up to 16 KB.
+    static let maximumAppendBytes = 2_000
+
     private struct ActiveSession: Sendable {
         let requestID: UUID
         let client: any VoicePipeSessionClient
@@ -72,7 +76,9 @@ public actor VoicePipeTextSpeaker: ClipboardSpeechPlaying {
 
         do {
             try await client.connect()
-            try await client.append(text)
+            for piece in Self.appendPieces(of: text) {
+                try await client.append(piece)
+            }
             try Task.checkCancellation()
             await onReady(await client.sessionID)
             try await client.finish()
@@ -106,6 +112,28 @@ public actor VoicePipeTextSpeaker: ClipboardSpeechPlaying {
         guard let activeSession, activeSession.requestID == requestID else { return false }
         try await activeSession.client.resume()
         return true
+    }
+
+    /// Splits `text` at character boundaries into pieces of at most `maximumBytes` UTF-8
+    /// bytes. A single character that is larger than the limit becomes its own piece.
+    static func appendPieces(of text: String, maximumBytes: Int = maximumAppendBytes) -> [String] {
+        var pieces: [String] = []
+        var piece = ""
+        var pieceBytes = 0
+        for character in text {
+            let bytes = character.utf8.count
+            if pieceBytes + bytes > maximumBytes, !piece.isEmpty {
+                pieces.append(piece)
+                piece = ""
+                pieceBytes = 0
+            }
+            piece.append(character)
+            pieceBytes += bytes
+        }
+        if !piece.isEmpty {
+            pieces.append(piece)
+        }
+        return pieces
     }
 
     private func clear(requestID: UUID) {

@@ -247,6 +247,24 @@ func historyListModelTests() -> [TestCase] {
             model.playbackDidChange(HistoryPlayback(entryID: entry.id, phase: .paused))
             try expectEqual(model.rowIndicator(for: entry), .paused, "paused")
         },
+        TestCase(name: "the reader highlights only the entry that plays") { @MainActor in
+            let file = makeHistoryFileURL()
+            defer { removeHistoryDirectory(of: file) }
+            let (model, store, _) = makeModel(file: file)
+            try await insert(["Other", "Cafe\u{301} au lait. Then more."], into: store)
+            await model.refresh()
+            let entry = model.entries[0]
+            let other = model.entries[1]
+
+            model.playbackDidChange(HistoryPlayback(entryID: entry.id, phase: .starting))
+            try expectEqual(model.spokenRange(in: entry), nil, "no range before the first chunk")
+            try expectEqual(model.progress(in: entry), nil, "no progress before the first chunk")
+            model.playbackDidChange(HistoryPlayback(entryID: entry.id, phase: .playing, spokenRange: 15..<25))
+            try expectEqual(model.spokenRange(in: entry), 14..<24, "scalar range becomes a character range")
+            try expectEqual(model.progress(in: entry), 15.0 / 25.0, "progress counts scalars before the chunk")
+            try expectEqual(model.spokenRange(in: other), nil, "another entry has no highlight")
+            try expectEqual(model.progress(in: other), nil, "another entry has no progress")
+        },
         TestCase(name: "escape stops whatever plays") { @MainActor in
             let file = makeHistoryFileURL()
             defer { removeHistoryDirectory(of: file) }

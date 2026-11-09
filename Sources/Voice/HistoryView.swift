@@ -133,10 +133,9 @@ struct HistoryView: View {
             }
         case .loaded:
             if let entry = model.selectedEntry {
-                let playback = model.playback?.entryID == entry.id ? model.playback : nil
-                HistoryReaderView(entry: entry, spokenRange: playback?.spokenRange)
+                HistoryReaderView(entry: entry, spokenRange: model.spokenRange(in: entry))
                     .safeAreaInset(edge: .top, spacing: 0) {
-                        if let progress = playback?.progress(textLength: entry.text.count) {
+                        if let progress = model.progress(in: entry) {
                             HistoryProgressLine(value: progress)
                         }
                     }

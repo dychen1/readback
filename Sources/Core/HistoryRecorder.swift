@@ -98,6 +98,17 @@ public enum AppSpeechPurpose: Equatable, Sendable {
     /// Starts the current reading again after a settings change. The value is the history
     /// entry of that reading, if it has one.
     case settingsRestart(HistoryEntry.ID?)
+
+    /// The purpose of the same reading when a settings change starts it again. A clipboard
+    /// read that has no entry yet stays a clipboard read, so it is saved once.
+    public var restarted: AppSpeechPurpose {
+        switch self {
+        case .clipboardRead: .clipboardRead
+        case .voicePreview: .settingsRestart(nil)
+        case .historyReplay(let id): .settingsRestart(id)
+        case .settingsRestart: self
+        }
+    }
 }
 
 extension HistoryRecorder {
@@ -120,13 +131,7 @@ extension HistorySource {
     /// Makes an agent source from the host name that a client sends. The name is optional,
     /// and ReadBack does not trust it.
     public static func agent(reportedHost: String?) -> HistorySource {
-        let printable = (reportedHost ?? "").unicodeScalars.filter {
-            !CharacterSet.controlCharacters.contains($0)
-        }
-        let host = String(String.UnicodeScalarView(printable))
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .prefix(maximumAgentHostLength)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let host = UntrustedLabel.clean(reportedHost ?? "", maximumLength: maximumAgentHostLength)
         return .agent(host: host.isEmpty ? nil : host)
     }
 }

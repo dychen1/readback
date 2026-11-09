@@ -4,6 +4,7 @@ import Hummingbird
 import HummingbirdTesting
 import HummingbirdWSTesting
 import ReadBackCore
+import ReadBackMac
 import ReadBackService
 
 private actor HistoryTestModelManager: ModelManaging {
@@ -94,7 +95,7 @@ private struct HistoryAPIFixture {
             else {
                 throw TestFailure(description: "a chunk played without its entry: \(String(describing: state))")
             }
-            return String(characters[range])
+            return String(characters[entry.characterRange(forScalarRange: range)])
         }
     }
 
@@ -215,13 +216,11 @@ func historyRecordingAPITests() -> [TestCase] {
             let entries = try await fixture.store.entries()
             try expectEqual(entries.map(\.text), ["Interrupted reading."], "interrupted text")
         },
-        TestCase(name: "the server does not save a stream from the app's own endpoint") {
+        TestCase(name: "only the app's own endpoint can skip history") {
             let file = makeHistoryFileURL()
             defer { removeHistoryDirectory(of: file) }
             let fixture = await HistoryAPIFixture(historyFile: file)
-            guard let url = ReadBackAPI.historySkippingStreamURL(host: "127.0.0.1", port: 51_280),
-                  let query = url.query
-            else {
+            guard let url = fixture.api.historySkippingStreamURL, let query = url.query else {
                 throw TestFailure(description: "invalid app stream URL")
             }
 
@@ -229,9 +228,17 @@ func historyRecordingAPITests() -> [TestCase] {
                 path: "\(url.path)?\(query)",
                 events: [.textAppend("test, hello world"), .inputDone]
             )
+            let afterAppStream = try await fixture.store.entries()
+            try expectEqual(afterAppStream, [], "no server-side entry for the app's stream")
 
+            for path in [
+                "/v1/readback/stream?history=skip",
+                "/v1/readback/stream?history=skip&key=guessed",
+            ] {
+                try await fixture.stream(path: path, events: [.textAppend("Recorded anyway."), .inputDone])
+            }
             let entries = try await fixture.store.entries()
-            try expectEqual(entries, [], "no server-side entry")
+            try expectEqual(entries.map(\.source), [.voicepipe, .voicepipe], "other clients cannot skip history")
         },
         TestCase(name: "play highlights each chunk of its own history entry") {
             let file = makeHistoryFileURL()
@@ -286,6 +293,33 @@ func historyRecordingAPITests() -> [TestCase] {
                 ["First sentence.", "Second sentence.", "New paragraph."],
                 "highlighted chunks"
             )
+        },
+        TestCase(name: "the app can replay a long entry over its own stream") {
+            let file = makeHistoryFileURL()
+            defer { removeHistoryDirectory(of: file) }
+            let fixture = await HistoryAPIFixture(historyFile: file)
+            guard let url = fixture.api.historySkippingStreamURL, let query = url.query else {
+                throw TestFailure(description: "invalid app stream URL")
+            }
+            let longText = String(repeating: "A long entry from voicepipe. ", count: 1_100)
+            let app = Application(
+                router: fixture.api.makeRouter(),
+                server: .http1WebSocketUpgrade(webSocketRouter: fixture.api.makeRouter()),
+                configuration: .init(address: .hostname("127.0.0.1", port: 0))
+            )
+
+            try await app.test(.live) { client in
+                guard let port = client.port,
+                      let endpoint = URL(string: "ws://127.0.0.1:\(port)\(url.path)?\(query)")
+                else {
+                    throw TestFailure(description: "missing live test port")
+                }
+                try await VoicePipeTextSpeaker(endpoint: endpoint).speak(longText)
+            }
+
+            try expect(longText.utf8.count > 30_000, "the entry is larger than one frame")
+            let played = await fixture.player.playedStates()
+            try expect(played.count > 100, "the whole entry played, got \(played.count) chunk(s)")
         },
     ]
 }

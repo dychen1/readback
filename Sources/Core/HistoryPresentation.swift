@@ -10,8 +10,9 @@ public struct HistoryPlayback: Equatable, Sendable {
 
     public let entryID: HistoryEntry.ID
     public let phase: Phase
-    /// The part of the entry text that plays now, as character offsets into the entry text.
-    /// It stays `nil` until playback reports its progress. The reader shows no highlight for `nil`.
+    /// The part of the entry text that plays now, as Unicode scalar offsets into the entry
+    /// text. It stays `nil` until playback reports its progress. The reader shows no highlight
+    /// for `nil`. `HistoryEntry.characterRange(forScalarRange:)` converts it for the reader.
     public let spokenRange: Range<Int>?
 
     public init(entryID: HistoryEntry.ID, phase: Phase, spokenRange: Range<Int>? = nil) {
@@ -35,7 +36,8 @@ public struct HistoryPlayback: Equatable, Sendable {
     }
 
     /// The fraction of the text that played before the current part, from 0 to 1. The value
-    /// moves one part at a time. It is `nil` while `spokenRange` is `nil`.
+    /// moves one part at a time. It is `nil` while `spokenRange` is `nil`. `textLength` is
+    /// the number of Unicode scalars in the entry text.
     public func progress(textLength: Int) -> Double? {
         guard let spokenRange, textLength > 0 else { return nil }
         return Double(min(max(spokenRange.lowerBound, 0), textLength)) / Double(textLength)
@@ -245,6 +247,32 @@ extension HistoryEntry {
         }
         addParagraph(endingAt: characters.count)
         return paragraphs
+    }
+}
+
+extension HistoryEntry {
+    /// Converts Unicode scalar offsets into `text` to character offsets. An offset inside a
+    /// character moves out to the edge of that character, so the result covers the whole
+    /// character. Offsets past the end of the text become the end.
+    public func characterRange(forScalarRange range: Range<Int>) -> Range<Int> {
+        let lower = characterOffset(forScalarOffset: range.lowerBound, roundingUp: false)
+        let upper = characterOffset(forScalarOffset: range.upperBound, roundingUp: true)
+        return lower..<max(lower, upper)
+    }
+
+    private func characterOffset(forScalarOffset target: Int, roundingUp: Bool) -> Int {
+        var scalarOffset = 0
+        var characterOffset = 0
+        for character in text {
+            if target <= scalarOffset { return characterOffset }
+            let scalarCount = character.unicodeScalars.count
+            if target < scalarOffset + scalarCount {
+                return roundingUp ? characterOffset + 1 : characterOffset
+            }
+            scalarOffset += scalarCount
+            characterOffset += 1
+        }
+        return characterOffset
     }
 }
 
