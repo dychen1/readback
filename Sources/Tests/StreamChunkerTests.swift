@@ -61,6 +61,22 @@ func streamChunkerTests() -> [TestCase] {
                 "punctuated paragraph chunk"
             )
         },
+        TestCase(name: "chunker splits a long paragraph that has no sentence end") {
+            var chunker = StreamingTextChunker(maxCharacters: 250)
+            let paragraph = String(repeating: "word ", count: 600).trimmingCharacters(in: .whitespaces)
+
+            let chunks = chunker.append(paragraph + "\n\nNext paragraph")
+
+            try expect(chunks.count > 1, "long paragraph is split, got \(chunks.count) chunk(s)")
+            try expect(chunks.allSatisfy { $0.text.count <= 250 }, "chunks stay within the limit")
+            try expectEqual(chunks.last?.endsParagraph, true, "last chunk keeps the paragraph break")
+            try expect(chunks.dropLast().allSatisfy { !$0.endsParagraph }, "only the last chunk ends the paragraph")
+            try expectEqual(
+                chunks.map(\.text).joined().replacingOccurrences(of: " ", with: ""),
+                paragraph.replacingOccurrences(of: " ", with: ""),
+                "every character is kept in order"
+            )
+        },
         TestCase(name: "chunker flushes incomplete text after idle input") {
             var chunker = StreamingTextChunker(maxCharacters: 250)
             _ = chunker.append("No punctuation yet")

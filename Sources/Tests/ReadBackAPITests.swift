@@ -306,6 +306,21 @@ func readBackAPITests() -> [TestCase] {
             try expect(!active, "no session is left behind")
             try expectEqual(gateState, .idle, "gate is released")
         },
+        TestCase(name: "play reads a paragraph longer than the queue limit with no sentence end") {
+            let fixture = APIFixture()
+            let paragraph = String(repeating: "word ", count: 600).trimmingCharacters(in: .whitespaces)
+            let body = String(
+                decoding: try JSONSerialization.data(withJSONObject: ["input": paragraph + "\n\nThe end."]),
+                as: UTF8.self
+            )
+
+            try await fixture.play(body) { status, _ in
+                try expectEqual(status, 200, "long paragraph play status")
+            }
+            let requests = await fixture.manager.receivedRequests()
+            try expect(requests.allSatisfy { $0.input.count <= 250 }, "chunks stay short")
+            try expectEqual(requests.last?.input, "The end.", "the next paragraph is read")
+        },
         TestCase(name: "play splits paragraphs into separate segments") {
             let fixture = APIFixture()
             try await fixture.play(#"{"input":"First paragraph\n\nSecond paragraph"}"#) { status, _ in

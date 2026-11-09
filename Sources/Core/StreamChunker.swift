@@ -65,7 +65,9 @@ public struct StreamingTextChunker: Sendable {
     }
 
     private func paragraphBoundary() -> Boundary? {
-        guard let range = buffer.range(of: "\n\n") else {
+        guard let range = buffer.range(of: "\n\n"),
+              buffer.distance(from: buffer.startIndex, to: range.lowerBound) <= maxCharacters
+        else {
             return nil
         }
         return Boundary(
