@@ -12,6 +12,11 @@ public final class HistoryListModel: ObservableObject {
     }
 
     @Published public private(set) var state: State = .loading
+    @Published public var selectedEntryID: HistoryEntry.ID?
+    /// The History entry that plays now. The app sets it with `playbackDidChange(_:)`.
+    @Published public private(set) var playback: HistoryPlayback?
+    /// Tells why the last replay failed. The next replay sets it to `nil`.
+    @Published public private(set) var playbackError: String?
     /// Tells why the last delete or clear failed. The next successful delete or clear sets it
     /// to `nil`.
     @Published public private(set) var actionError: String?
@@ -19,10 +24,20 @@ public final class HistoryListModel: ObservableObject {
 
     private let store: HistoryStore
     private let replay: @MainActor (HistoryEntry) -> Void
+    private let stop: @MainActor () -> Void
+    private var selectsFirstEntryOnLoad = true
 
-    public init(store: HistoryStore, replay: @escaping @MainActor (HistoryEntry) -> Void) {
+    /// - Parameters:
+    ///   - replay: Stops the current reading and plays the entry.
+    ///   - stop: Stops the current reading, whatever started it.
+    public init(
+        store: HistoryStore,
+        replay: @escaping @MainActor (HistoryEntry) -> Void,
+        stop: @escaping @MainActor () -> Void
+    ) {
         self.store = store
         self.replay = replay
+        self.stop = stop
     }
 
     /// The entries, newest first. The list is empty while history loads or is unavailable.
@@ -30,30 +45,101 @@ public final class HistoryListModel: ObservableObject {
         if case .loaded(let entries) = state { entries } else { [] }
     }
 
+    public var selectedEntry: HistoryEntry? {
+        guard let selectedEntryID else { return nil }
+        return entries.first { $0.id == selectedEntryID }
+    }
+
+    /// True while the entry starts, plays or pauses. The Play button then reads "Stop".
+    public func isPlaying(_ entry: HistoryEntry) -> Bool {
+        playback?.entryID == entry.id
+    }
+
+    public var isSelectionPlaying: Bool {
+        selectedEntry.map(isPlaying) ?? false
+    }
+
+    public func rowIndicator(for entry: HistoryEntry) -> HistoryRowIndicator {
+        HistoryRowIndicator(playback: playback, entryID: entry.id)
+    }
+
+    /// For example "Clear all 12 read-backs?".
+    public var clearConfirmationTitle: String {
+        entries.count == 1 ? "Clear 1 read-back?" : "Clear all \(entries.count) read-backs?"
+    }
+
     public func refresh() async {
         do {
-            state = .loaded(try await store.entries())
+            let entries = try await store.entries()
+            state = .loaded(entries)
+            keepSelectionValid(in: entries)
         } catch {
             state = .unavailable(error.localizedDescription)
+            selectedEntryID = nil
         }
     }
 
     /// Loads the list again after each change. It stops when the caller cancels its task, for
-    /// example a view's `.task`.
+    /// example a view's `.task`. If nothing is selected, the first load selects the newest entry.
     public func observeChanges() async {
         let changes = await store.changes()
+        selectsFirstEntryOnLoad = true
         await refresh()
         for await _ in changes {
             await refresh()
         }
     }
 
+    // MARK: - Playback
+
     public func play(_ entry: HistoryEntry) {
+        playbackError = nil
         replay(entry)
     }
 
+    /// Plays the selected entry from the start. If the entry plays now, it starts again.
+    public func playSelected() {
+        if let selectedEntry { play(selectedEntry) }
+    }
+
+    /// Stops the selected entry if it plays now. Otherwise plays it.
+    public func togglePlaySelected() {
+        guard let selectedEntry else { return }
+        if isPlaying(selectedEntry) {
+            stopPlayback()
+        } else {
+            play(selectedEntry)
+        }
+    }
+
+    public func stopPlayback() {
+        stop()
+    }
+
+    public func playbackDidChange(_ playback: HistoryPlayback?) {
+        self.playback = playback
+    }
+
+    public func replayDidFail(_ message: String) {
+        playbackError = message
+    }
+
+    // MARK: - Delete and clear
+
+    /// Deletes the entry. If the entry plays now, playback stops first. If the entry was
+    /// selected, the model selects the next older entry, or the newer one if no older entry exists.
     public func delete(_ entry: HistoryEntry) async {
+        if isPlaying(entry) { stopPlayback() }
+        let wasSelected = selectedEntryID == entry.id
+        let nextSelection = wasSelected ? entryID(after: entry.id) : selectedEntryID
         await perform("ReadBack did not delete the entry.") { try await $0.delete(id: entry.id) }
+        if wasSelected, actionError == nil {
+            selectedEntryID = nextSelection
+        }
+    }
+
+    public func deleteSelected() async {
+        if let selectedEntry { await delete(selectedEntry) }
     }
 
     /// Asks for confirmation before `clear()`. An empty list has nothing to confirm.
@@ -65,9 +151,14 @@ public final class HistoryListModel: ObservableObject {
         isConfirmingClear = false
     }
 
+    /// Stops playback, deletes all entries and selects nothing.
     public func clear() async {
         isConfirmingClear = false
+        if playback != nil { stopPlayback() }
         await perform("ReadBack did not clear history.") { try await $0.clear() }
+        if actionError == nil {
+            selectedEntryID = nil
+        }
     }
 
     private func perform(
@@ -81,6 +172,24 @@ public final class HistoryListModel: ObservableObject {
             actionError = "\(failureMessage) \(error.localizedDescription)"
         }
         await refresh()
+    }
+
+    private func entryID(after id: HistoryEntry.ID) -> HistoryEntry.ID? {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return nil }
+        if entries.indices.contains(index + 1) { return entries[index + 1].id }
+        return index > 0 ? entries[index - 1].id : nil
+    }
+
+    private func keepSelectionValid(in entries: [HistoryEntry]) {
+        if let selectedEntryID, !entries.contains(where: { $0.id == selectedEntryID }) {
+            self.selectedEntryID = entries.first?.id
+        }
+        if selectedEntryID == nil, selectsFirstEntryOnLoad, let newest = entries.first {
+            selectedEntryID = newest.id
+        }
+        if !entries.isEmpty {
+            selectsFirstEntryOnLoad = false
+        }
     }
 }
 

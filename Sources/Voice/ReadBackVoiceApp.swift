@@ -49,9 +49,10 @@ struct ReadBackApp: App {
         }
 
         Window("History", id: "history") {
-            HistoryPlaceholderView(model: controller.historyList)
-                .frame(minWidth: 420, minHeight: 320)
+            HistoryView(model: controller.historyList, voiceName: controller.selectedVoiceName)
+                .frame(minWidth: 460, minHeight: 360)
         }
+        .defaultSize(width: 720, height: 520)
     }
 }
 
@@ -354,7 +355,9 @@ final class ServiceController: ObservableObject {
     @Published var status = "Starting…"
     @Published private(set) var launchAtLogin = false
     @Published private(set) var shortcutStatus: String?
-    @Published private(set) var clipboardPlaybackState: ClipboardPlaybackState = .idle
+    @Published private(set) var clipboardPlaybackState: ClipboardPlaybackState = .idle {
+        didSet { syncHistoryPlayback() }
+    }
     @Published private(set) var playbackRate = PlaybackRate.default
     @Published private(set) var paragraphPause = ParagraphPause.default
     @Published var selectedVoiceID: String? = "af_heart"
@@ -394,12 +397,15 @@ final class ServiceController: ObservableObject {
     let skillInstaller: ReadBackSkillInstaller
     let mcpClients: MCPClientRegistry
     let historyRecorder: HistoryRecorder
-    private(set) lazy var historyList = HistoryListModel(store: historyRecorder.store) { [weak self] entry in
-        self?.replayFromHistory(entry)
-    }
+    private(set) lazy var historyList = HistoryListModel(
+        store: historyRecorder.store,
+        replay: { [weak self] entry in self?.replayFromHistory(entry) },
+        stop: { [weak self] in self?.stopCurrentReading() }
+    )
+    var historyReplay: (requestID: UUID, entryID: HistoryEntry.ID)?
     private var serviceTask: Task<Void, Never>?
     private var clipboardTask: Task<Void, Never>?
-    private var clipboardRequestID: UUID?
+    private(set) var clipboardRequestID: UUID?
     private var pendingClipboardStartID: UUID?
     private var currentClipboardText: String?
     private var hotKey: GlobalHotKey?
@@ -750,11 +756,13 @@ final class ServiceController: ObservableObject {
         }
     }
 
+    @discardableResult
     func startClipboardSpeech(
         _ text: String,
         purpose: AppSpeechPurpose,
-        completionStatus: String? = nil
-    ) {
+        completionStatus: String? = nil,
+        onFailure: (@MainActor (any Error) -> Void)? = nil
+    ) -> UUID {
         let previousRequestID = clipboardRequestID
         let requestID = UUID()
         clipboardTask?.cancel()
@@ -811,6 +819,7 @@ final class ServiceController: ObservableObject {
                         requestID: requestID,
                         status: "The active model is unavailable"
                     )
+                    onFailure?(ServiceControllerError.modelNotInstalled)
                 }
             } catch {
                 if clipboardRequestID == requestID {
@@ -818,12 +827,14 @@ final class ServiceController: ObservableObject {
                         requestID: requestID,
                         status: "Clipboard read-back failed: \(error.localizedDescription)"
                     )
+                    onFailure?(error)
                 }
             }
         }
+        return requestID
     }
 
-    private func cancelPendingClipboardSpeech() {
+    func cancelPendingClipboardSpeech() {
         guard let requestID = clipboardRequestID else { return }
         clipboardTask?.cancel()
         pendingClipboardStartID = nil
