@@ -230,9 +230,15 @@ public final class ReadBackAPI: @unchecked Sendable {
             }
         }
 
-        router.post("/mcp") { [mcp] request, _ in try await mcp.handle(request) }
-        router.get("/mcp") { [mcp] request, _ in try await mcp.handle(request) }
-        router.delete("/mcp") { [mcp] request, _ in try await mcp.handle(request) }
+        router.post("/mcp") { [mcp] request, context in
+            try await mcp.handle(request, channel: context.channel)
+        }
+        router.get("/mcp") { [mcp] request, context in
+            try await mcp.handle(request, channel: context.channel)
+        }
+        router.delete("/mcp") { [mcp] request, context in
+            try await mcp.handle(request, channel: context.channel)
+        }
 
         router.ws("/v1/readback/stream", shouldUpgrade: { [self] request, _ in
             isOriginAllowed(request) ? .upgrade([:]) : .dontUpgrade

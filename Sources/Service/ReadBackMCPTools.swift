@@ -67,7 +67,9 @@ struct ReadBackMCPTools: Sendable {
     let reader: ReadingStarter
     let coordinator: SpeechCoordinator
 
-    func call(_ parameters: CallTool.Parameters) async throws -> CallTool.Result {
+    /// - Parameter clientName: The name the calling host sent in `initialize`, if known.
+    ///   History shows a known host by its display name, for example "Claude Code".
+    func call(_ parameters: CallTool.Parameters, clientName: String?) async throws -> CallTool.Result {
         switch parameters.name {
         case Self.play.name:
             guard let text = parameters.arguments?["text"]?.stringValue else {
@@ -80,7 +82,9 @@ struct ReadBackMCPTools: Sendable {
             do {
                 id = try await reader.start(
                     ReadingRequest(text: text),
-                    historySource: .agent(host: nil)
+                    historySource: .agent(
+                        reportedHost: clientName.map { MCPHost(clientName: $0)?.displayName ?? $0 }
+                    )
                 )
             } catch {
                 return Self.result(error.message, isError: true)

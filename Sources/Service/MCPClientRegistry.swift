@@ -58,6 +58,7 @@ public actor MCPClientRegistry {
     private let now: @Sendable () -> Date
     private var connections: [MCPClientConnection]
     private var continuations: [UUID: AsyncStream<[MCPClientConnection]>.Continuation] = [:]
+    private var clientNamesByConnection: [ObjectIdentifier: String] = [:]
 
     /// Loads earlier connections from `storeURL` when given, so status survives an app
     /// restart. Hosts do not reconnect to a stateless server on their own.
@@ -103,6 +104,24 @@ public actor MCPClientRegistry {
         }
         save()
         continuations.values.forEach { $0.yield(connections) }
+    }
+
+    /// Remembers that `clientName` sent `initialize` on the HTTP connection `connection`.
+    /// Later requests on the same connection carry no client info, so the `play` tool uses
+    /// this name to label the history entry. Call `forget(connection:)` when it closes.
+    public func remember(clientName: String, connection: ObjectIdentifier) {
+        let name = Self.bounded(clientName)
+        clientNamesByConnection[connection] = name.isEmpty ? nil : name
+    }
+
+    public func forget(connection: ObjectIdentifier) {
+        clientNamesByConnection[connection] = nil
+    }
+
+    /// The client name sent in `initialize` on `connection`, or `nil` if that connection
+    /// sent no `initialize`.
+    public func clientName(connection: ObjectIdentifier) -> String? {
+        clientNamesByConnection[connection]
     }
 
     private func save() {

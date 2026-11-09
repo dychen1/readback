@@ -1,6 +1,7 @@
 import Foundation
 import Hummingbird
 import MCP
+import NIOCore
 
 /// Serves MCP over HTTP at `/mcp` with the SDK's stateless transport.
 ///
@@ -35,7 +36,9 @@ struct MCPEndpoint: Sendable {
         ])
     }
 
-    func handle(_ request: Request) async throws -> Response {
+    /// - Parameter channel: The HTTP connection of the request. A client that sends
+    ///   `initialize` on a connection is the client of later requests on it.
+    func handle(_ request: Request, channel: any Channel) async throws -> Response {
         let body = try await request.body.collect(upTo: Self.maximumBodySize)
         var headers: [String: String] = [:]
         for field in request.headers {
@@ -54,10 +57,15 @@ struct MCPEndpoint: Sendable {
             path: request.uri.path
         )
 
+        let connection = ObjectIdentifier(channel)
         let transport = StatelessHTTPServerTransport(validationPipeline: validationPipeline)
-        let server = await makeServer()
+        let server = await makeServer(clientName: clients.clientName(connection: connection))
         try await server.start(transport: transport) { [clients] client, _ in
             await clients.record(clientName: client.name, version: client.version)
+            await clients.remember(clientName: client.name, connection: connection)
+            channel.closeFuture.whenComplete { _ in
+                Task { await clients.forget(connection: connection) }
+            }
         }
         let mcpResponse = await transport.handleRequest(mcpRequest)
         await server.stop()
@@ -78,7 +86,7 @@ struct MCPEndpoint: Sendable {
         )
     }
 
-    private func makeServer() async -> Server {
+    private func makeServer(clientName: String?) async -> Server {
         let server = Server(
             name: "readback",
             version: serverVersion,
@@ -90,7 +98,7 @@ struct MCPEndpoint: Sendable {
             .init(tools: ReadBackMCPTools.definitions)
         }
         await server.withMethodHandler(CallTool.self) { [tools] parameters in
-            try await tools.call(parameters)
+            try await tools.call(parameters, clientName: clientName)
         }
         return server
     }
