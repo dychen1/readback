@@ -75,16 +75,32 @@ public struct ReadBackServerEvent: Codable, Equatable, Sendable {
         case error
     }
 
+    /// Why a session ended. `session.finished` carries it.
+    public enum EndReason: String, Codable, Sendable {
+        case completed
+        case interrupted
+        case stopped
+        case failed
+    }
+
     public let type: Kind
     public let sessionID: String
     public let sequence: Int?
     public let message: String?
+    public let reason: EndReason?
 
-    public init(type: Kind, sessionID: String, sequence: Int? = nil, message: String? = nil) {
+    public init(
+        type: Kind,
+        sessionID: String,
+        sequence: Int? = nil,
+        message: String? = nil,
+        reason: EndReason? = nil
+    ) {
         self.type = type
         self.sessionID = sessionID
         self.sequence = sequence
         self.message = message
+        self.reason = reason
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -92,5 +108,6 @@ public struct ReadBackServerEvent: Codable, Equatable, Sendable {
         case sessionID = "session_id"
         case sequence
         case message
+        case reason
     }
 }

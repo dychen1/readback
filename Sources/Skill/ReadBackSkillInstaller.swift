@@ -3,11 +3,13 @@ import Foundation
 public enum ReadBackSkillHost: String, CaseIterable, Codable, Hashable, Sendable {
     case openAI
     case claudeCode
+    case cursor
 
     public var displayName: String {
         switch self {
         case .openAI: "ChatGPT and Codex"
         case .claudeCode: "Claude Code"
+        case .cursor: "Cursor"
         }
     }
 }
@@ -173,6 +175,28 @@ public struct ReadBackSkillInstaller: @unchecked Sendable {
         }
     }
 
+    /// Replaces the managed package with the bundled one when ReadBack owns the
+    /// installed package and the bundled version is newer, or the package is incomplete.
+    /// An older bundled version never replaces a newer one, so two installed ReadBack
+    /// builds do not swap the skill back and forth. This never changes host folders.
+    /// Linked hosts see the update through their links, and a conflicting folder stays
+    /// as it is. Returns whether the package changed.
+    @discardableResult
+    public func updateInstalledPackageIfNeeded() throws -> Bool {
+        guard packageIsComplete(at: sourceURL),
+              let sourceManifest = try? manifest(at: sourceURL),
+              sourceManifest.isOwnedByReadBack,
+              itemExists(at: managedURL),
+              let installedManifest = try? manifest(at: managedURL),
+              installedManifest.isOwnedByReadBack,
+              sourceManifest.skillVersion.compare(installedManifest.skillVersion, options: .numeric)
+                == .orderedDescending
+                || !packageIsComplete(at: managedURL)
+        else { return false }
+        try publishManagedPackage()
+        return true
+    }
+
     public func remove() throws {
         for host in ReadBackSkillHost.allCases {
             guard let hostURL = hostURLs[host], isOwnedHostLink(at: hostURL) else { continue }
@@ -234,7 +258,7 @@ public struct ReadBackSkillInstaller: @unchecked Sendable {
         } else {
             destinationURL = url.deletingLastPathComponent().appendingPathComponent(destination)
         }
-        return destinationURL.standardizedFileURL == managedURL
+        return destinationURL.standardizedFileURL.path == managedURL.path
     }
 
     private func manifest(at packageURL: URL) throws -> Manifest {

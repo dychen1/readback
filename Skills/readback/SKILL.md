@@ -22,7 +22,7 @@ Create the brief in this order:
 1. Lead with the result or conclusion.
 2. Preview the main points when there are several.
 3. Explain them in causal or procedural order with short sentences and one main idea per sentence.
-4. Use explicit transitions such as “First,” “Next,” “The main risk is,” and “The final step is.”
+4. Use explicit transitions such as "First," "Next," "The main risk is," and "The final step is."
 5. Put a blank line between logical sections.
 
 Use active voice, familiar words, and a conversational tone. Expand an abbreviation on first use when its spoken form may be unclear.
@@ -35,20 +35,30 @@ Remove Markdown marks, raw citation syntax, repeated headings, visual layout cue
 
 ## Play the brief
 
-Send the adapted brief through standard input to:
+Send only the adapted brief, never the original answer. Use the first channel in this list that the host supports:
+
+1. ReadBack MCP tool, preferred. If a `play` tool from the `readback` MCP server is available, call it with the brief as `text`. An example name is `mcp__readback__play`. The tool returns when playback starts. Reply only with "Reading it aloud."
+2. Standard input. Use this channel if the host gives subprocesses an interactive standard-input channel. Send the brief through it to the client below, with no arguments. After the client exits, reply only with "Read-back complete."
+3. File handoff, discouraged. Use this channel only if the host can run nothing but command strings:
+   1. Resolve `$TMPDIR` to an absolute path. Only the user can read it.
+   2. Use the host's file-writing tool, not a shell command, to write the brief to `<TMPDIR>/readback-brief-<random>.txt`. Write the file one time. Do not rewrite it or append to it.
+   3. Run the client with standard input redirected from that file. The command string contains only the path, never the brief.
+   4. Delete the file, even if the client failed.
+   5. Reply "Read-back complete."
+   6. Tell the user one time that read-back is faster with the ReadBack MCP server. They connect it in ReadBack Settings, under Agent Read-Back.
 
 ```text
 $HOME/Library/Application Support/ReadBack/Skills/readback/scripts/readback-skill-client
 ```
 
-Pass no arguments. Do not send the original answer. Do not use a temporary file, clipboard, environment variable, model option, voice option, speed option, or endpoint option.
+If the host has none of these channels, state that read-back is unavailable in this host and stop.
 
-Use the host's interactive standard-input channel. If the host has no interactive standard-input channel available for a subprocess, state that read-back is unavailable in this host and stop. Do not compose a shell command string containing the brief — a here-document or quoted argument can be broken out of by content in the brief that happens to match its delimiter or quoting.
+Never put the brief in a shell command string. Text in the brief can match a here-document delimiter or break out of quotes. Do not use the clipboard, an environment variable, a model option, a voice option, a speed option, or an endpoint option.
 
-After the client exits, reply only with “Read-back complete.” On failure, give the shortest actionable fix without repeating the brief.
+On failure, give the shortest actionable fix without repeating the brief.
 
 ## Example
 
-Written answer: “**Result:** 27 tests passed. `Sources/App.swift` now retries twice. Warning: the API key is missing. Run the shown command next.”
+Written answer: "**Result:** 27 tests passed. `Sources/App.swift` now retries twice. Warning: the API key is missing. Run the shown command next."
 
-Spoken brief: “The change is working, and all 27 tests passed. The app now retries failed work twice. The exact code and file path remain on screen. The main warning is that the API key is missing. Next, run the command shown in the answer.”
+Spoken brief: "The change is working, and all 27 tests passed. The app now retries failed work twice. The exact code and file path remain on screen. The main warning is that the API key is missing. Next, run the command shown in the answer."

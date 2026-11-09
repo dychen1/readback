@@ -29,6 +29,10 @@ let package = Package(
             url: "https://github.com/Blaizzy/mlx-audio-swift.git",
             exact: "0.1.3"
         ),
+        .package(
+            url: "https://github.com/modelcontextprotocol/swift-sdk.git",
+            exact: "0.12.1"
+        ),
     ],
     targets: [
         .target(name: "ReadBackCore", path: "Sources/Core"),
@@ -46,6 +50,7 @@ let package = Package(
                 "ReadBackCore",
                 .product(name: "Hummingbird", package: "hummingbird"),
                 .product(name: "HummingbirdWebSocket", package: "hummingbird-websocket"),
+                .product(name: "MCP", package: "swift-sdk"),
             ],
             path: "Sources/Service"
         ),
@@ -64,6 +69,7 @@ let package = Package(
                 "ReadBackMac",
                 "ReadBackService",
                 "ReadBackSkill",
+                "VoicePipeKit",
             ],
             path: "Sources/Voice",
             // SwiftPM does not define DEBUG for the debug configuration on its own

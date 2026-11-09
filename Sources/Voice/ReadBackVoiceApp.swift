@@ -6,6 +6,7 @@ import ReadBackService
 import ReadBackSkill
 import ServiceManagement
 import SwiftUI
+import VoicePipeKit
 
 @main
 @MainActor
@@ -125,6 +126,23 @@ struct ReadBackPopover: View {
             }
 
             Divider()
+
+            HStack {
+                Label(
+                    controller.isReading ? "Reading aloud" : "Not reading",
+                    systemImage: controller.isReading ? "speaker.wave.2.fill" : "speaker.slash"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    controller.stopReading()
+                } label: {
+                    Label("Stop", systemImage: "stop.fill")
+                }
+                .disabled(!controller.isReading)
+                .help("Stop the current reading, whatever app or agent started it")
+            }
 
             HStack {
                 Button(controller.isRunning ? "Stop service" : "Start service") {
@@ -321,6 +339,8 @@ struct ReadBackPopover: View {
 @MainActor
 final class ServiceController: ObservableObject {
     @Published private(set) var isRunning = false
+    @Published private(set) var isReading = false
+    @Published private(set) var mcpConnections: [MCPClientConnection] = []
     @Published var status = "Starting…"
     @Published private(set) var launchAtLogin = false
     @Published private(set) var shortcutStatus: String?
@@ -362,6 +382,7 @@ final class ServiceController: ObservableObject {
     private let clipboardAction: ClipboardReadBackAction
     private let speechSettings: SpeechSettingsStore
     let skillInstaller: ReadBackSkillInstaller
+    let mcpClients: MCPClientRegistry
     private var serviceTask: Task<Void, Never>?
     private var clipboardTask: Task<Void, Never>?
     private var clipboardRequestID: UUID?
@@ -406,6 +427,10 @@ final class ServiceController: ObservableObject {
                 ),
                 .claudeCode: homeURL.appendingPathComponent(
                     ".claude/skills/readback",
+                    isDirectory: true
+                ),
+                .cursor: homeURL.appendingPathComponent(
+                    ".cursor/skills/readback",
                     isDirectory: true
                 ),
             ]
@@ -497,11 +522,19 @@ final class ServiceController: ObservableObject {
         )
         let settings = SpeechSettingsStore(configuration: configuration)
         speechSettings = settings
+        let clients = MCPClientRegistry(
+            storeURL: paths.supportDirectory.appendingPathComponent("mcp-clients.json")
+        )
+        mcpClients = clients
         api = ReadBackAPI(
             configuration: configuration,
             modelManager: manager,
             coordinator: coordinator,
-            speechSettings: settings
+            speechSettings: settings,
+            mcpClients: clients,
+            serverVersion: Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleShortVersionString"
+            ) as? String ?? "dev"
         )
         clipboardMonitor = ClipboardChangeMonitor { [coordinator] in
             await coordinator.invalidateReplayCache()
@@ -530,6 +563,16 @@ final class ServiceController: ObservableObject {
         Task {
             await observeModelUpdates()
         }
+        Task { [weak self, coordinator] in
+            for await isActive in await coordinator.activityUpdates() {
+                self?.isReading = isActive
+            }
+        }
+        Task { [weak self, clients] in
+            for await connections in await clients.updates() {
+                self?.mcpConnections = connections
+            }
+        }
     }
 
     func launch() {
@@ -537,6 +580,15 @@ final class ServiceController: ObservableObject {
         start()
         Task { [modelWarmup] in
             await modelWarmup.start()
+        }
+        updateInstalledReadBackSkill()
+    }
+
+    func stopReading() {
+        Task {
+            if await coordinator.stop() {
+                status = "Read-back stopped"
+            }
         }
     }
 
@@ -723,6 +775,13 @@ final class ServiceController: ObservableObject {
                     status: completionStatus ?? "Ready — read \(text.count) characters"
                 )
             } catch is CancellationError {
+            } catch VoicePipeError.interrupted {
+                finishClipboardRequest(
+                    requestID: requestID,
+                    status: "A newer reading replaced the read-back"
+                )
+            } catch VoicePipeError.stopped {
+                finishClipboardRequest(requestID: requestID, status: "Read-back stopped")
             } catch ServiceControllerError.modelNotInstalled {
                 if clipboardRequestID == requestID {
                     finishClipboardRequest(

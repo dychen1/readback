@@ -11,7 +11,11 @@ public struct ReadBackSkillPresentation: Equatable, Sendable {
     public init(snapshot: ReadBackSkillInstallSnapshot) {
         switch snapshot.state {
         case .notInstalled:
-            status = "Not installed"
+            let missing = ReadBackSkillHost.allCases.filter { !snapshot.installedHosts.contains($0) }
+            status = snapshot.installedHosts.isEmpty
+                ? "Not installed"
+                : "Installed for \(Self.names(snapshot.installedHosts)). "
+                    + "Install to add \(Self.names(missing))."
             action = .install
         case .installed:
             let hosts = snapshot.installedHosts.map(\.displayName).joined(separator: ", ")
@@ -30,6 +34,10 @@ public struct ReadBackSkillPresentation: Equatable, Sendable {
             status = "The skill is missing from this app build"
             action = nil
         }
+    }
+
+    private static func names(_ hosts: [ReadBackSkillHost]) -> String {
+        hosts.map(\.displayName).joined(separator: ", ")
     }
 
     public var actionTitle: String? {

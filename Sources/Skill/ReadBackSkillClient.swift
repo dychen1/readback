@@ -185,11 +185,20 @@ public struct ReadBackSkillClient: Sendable {
         request.httpBody = try JSONEncoder().encode(PlayRequest(input: text))
         let (data, response) = try await transport.data(for: request)
         guard (200..<300).contains(response.statusCode) else {
+            let message = (try? JSONDecoder().decode(ServiceErrorBody.self, from: data))?.error.message
             throw ReadBackSkillClientError.unexpectedStatus(
                 response.statusCode,
-                String(decoding: data, as: UTF8.self)
+                message ?? String(decoding: data, as: UTF8.self)
             )
         }
+    }
+
+    private struct ServiceErrorBody: Decodable {
+        struct Detail: Decodable {
+            let message: String
+        }
+
+        let error: Detail
     }
 
     private static func isConnectionFailure(_ error: URLError) -> Bool {

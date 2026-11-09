@@ -409,10 +409,27 @@ public actor ModelManager: ModelManaging {
         if let voice, let definition, !definition.voices.contains(where: { $0.id == voice }) {
             throw ModelManagerError.invalidVoice(voice)
         }
+        var languageCode = request.languageCode
+        if let requested = request.languageCode {
+            // A model with no catalog entry (local Kokoro) has no known languages, so a
+            // requested one would fail only once synthesis runs.
+            guard let definition else { throw ModelManagerError.invalidLanguage(requested) }
+            // Callers may send the catalog code ("en") or the runtime value ("English").
+            guard let language = definition.languages.first(where: {
+                $0.code == requested || $0.runtimeValue == requested
+            }) else {
+                throw ModelManagerError.invalidLanguage(requested)
+            }
+            // The library knows install state only for catalog models, not local ones.
+            if id != .local, !(await library.isLanguageInstalled(language.code, for: id)) {
+                throw ModelManagerError.invalidLanguage(requested)
+            }
+            languageCode = language.runtimeValue
+        }
         return SpeechRequest(
             input: request.input,
             voice: runtimeVoice(voiceID: voice, definition: definition),
-            languageCode: request.languageCode ?? runtimeLanguage(
+            languageCode: languageCode ?? runtimeLanguage(
                 languageCode: preferences.languageCode,
                 voiceID: voice,
                 definition: definition

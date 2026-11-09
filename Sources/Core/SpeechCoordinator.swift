@@ -8,11 +8,34 @@ public protocol AudioPlaying: Sendable {
 }
 
 public enum SpeechCoordinatorError: Error, Equatable, Sendable {
-    case sessionAlreadyActive
-    case noActiveSession
+    /// The session ended or a newer reading replaced it.
+    case sessionNotActive
+    case modelSwitchInProgress
     case queueLimitExceeded
 }
 
+/// How a reading ended.
+public enum SpeechSessionOutcome: Equatable, Sendable {
+    case completed
+    /// A newer reading replaced it.
+    case interrupted
+    /// Its own client canceled it, or a stop request ended it.
+    case stopped
+    /// Every segment was attempted, but at least one failed to synthesize or play.
+    case failed(String)
+
+    var endReason: ReadBackServerEvent.EndReason {
+        switch self {
+        case .completed: .completed
+        case .interrupted: .interrupted
+        case .stopped: .stopped
+        case .failed: .failed
+        }
+    }
+}
+
+/// Owns the single current reading. Every operation that targets a reading names its
+/// session, so a client whose reading was replaced cannot affect the newer one.
 public actor SpeechCoordinator {
     public typealias EventSink = @Sendable (ReadBackServerEvent) async -> Void
 
@@ -25,6 +48,16 @@ public actor SpeechCoordinator {
         let pauseBefore: Double
     }
 
+    private struct EndedSession: Sendable {
+        let id: String
+        let sink: EventSink
+        let outcome: SpeechSessionOutcome
+    }
+
+    /// Waiters ask right after their session ends, and at most a few readings replace each
+    /// other in that time, so 16 recent outcomes is plenty.
+    private static let recentOutcomeLimit = 16
+
     private let synthesizer: any SpeechSynthesizing
     private let player: any AudioPlaying
     private let activityGate: ReadBackActivityGate?
@@ -32,8 +65,8 @@ public actor SpeechCoordinator {
 
     private var sessionID: String?
     private var sessionGeneration = 0
-    private var isEndingSession = false
     private var eventSink: EventSink?
+    private var sessionFailure: String?
     private var queue: [Segment] = []
     private var nextSequence = 0
     private var pendingCharacters = 0
@@ -41,8 +74,13 @@ public actor SpeechCoordinator {
     private var queuePaused = false
     private var playbackPaused = false
     private var worker: Task<Void, Never>?
-    private var completionWaiters: [CheckedContinuation<Void, Never>] = []
+    private var completionWaiters: [String: [CheckedContinuation<SpeechSessionOutcome, Never>]] = [:]
+    private var audioStarted = false
+    private var audioStartWaiters: [String: [CheckedContinuation<SpeechSessionOutcome?, Never>]] = [:]
+    private var recentOutcomes: [(id: String, outcome: SpeechSessionOutcome)] = []
     private var pauseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var transitionTail: Task<Void, Never>?
+    private var activityContinuations: [UUID: AsyncStream<Bool>.Continuation] = [:]
     private var replayCache: SpeechReplayCache
     private var replayRecordingID: UUID?
 
@@ -65,31 +103,46 @@ public actor SpeechCoordinator {
         sessionID != nil
     }
 
+    public var currentSessionID: String? {
+        sessionID
+    }
+
     public var isPaused: Bool {
         playbackPaused
     }
 
-    public func startSession(id: String, events: @escaping EventSink) async throws {
-        guard sessionID == nil else {
-            throw SpeechCoordinatorError.sessionAlreadyActive
+    /// Yields whether a reading is active, starting with the current state.
+    public func activityUpdates() -> AsyncStream<Bool> {
+        let id = UUID()
+        let (stream, continuation) = AsyncStream<Bool>.makeStream(
+            bufferingPolicy: .bufferingNewest(1)
+        )
+        activityContinuations[id] = continuation
+        continuation.yield(sessionID != nil)
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.removeActivityContinuation(id) }
         }
-        do {
-            try await activityGate?.beginSpeech(sessionID: id)
-        } catch {
-            throw SpeechCoordinatorError.sessionAlreadyActive
-        }
-        sessionID = id
-        sessionGeneration += 1
-        isEndingSession = false
-        eventSink = events
-        queue.removeAll(keepingCapacity: true)
-        nextSequence = 0
-        pendingCharacters = 0
-        inputFinished = false
-        queuePaused = false
-        playbackPaused = false
-        replayRecordingID = replayCache.beginRecording()
-        await events(ReadBackServerEvent(type: .sessionReady, sessionID: id))
+        return stream
+    }
+
+    /// Makes `id` the current reading. A reading already in progress, whatever started
+    /// it, ends as `.interrupted` and its audio stops before the new session starts.
+    /// Throws `.modelSwitchInProgress`, and leaves everything unchanged, while a model
+    /// switch holds the activity gate.
+    public func replaceSession(id: String, events: @escaping EventSink) async throws {
+        try await serialized { try await self.performReplace(id: id, events: events) }
+    }
+
+    /// Ends the current reading, whatever started it. Returns `false` when nothing was
+    /// playing.
+    @discardableResult
+    public func stop() async -> Bool {
+        (try? await serialized { await self.performEnd(sessionID: nil) }) ?? false
+    }
+
+    /// Ends `sessionID` as `.stopped` if it is still the current reading.
+    public func cancel(sessionID: String) async {
+        _ = try? await serialized { await self.performEnd(sessionID: sessionID) }
     }
 
     /// Drops saved and pending replay data without stopping active playback.
@@ -99,14 +152,15 @@ public actor SpeechCoordinator {
 
     @discardableResult
     public func enqueue(
+        sessionID expectedSessionID: String,
         text: String,
         voice: String?,
         languageCode: String? = nil,
         speed: Double,
         pauseBefore: Double = 0
     ) async throws -> Int {
-        guard let sessionID, let eventSink else {
-            throw SpeechCoordinatorError.noActiveSession
+        guard sessionID == expectedSessionID, let eventSink else {
+            throw SpeechCoordinatorError.sessionNotActive
         }
         let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else {
@@ -115,7 +169,9 @@ public actor SpeechCoordinator {
         guard pendingCharacters + normalized.count <= maximumPendingCharacters else {
             if !queuePaused {
                 queuePaused = true
-                await eventSink(ReadBackServerEvent(type: .queuePaused, sessionID: sessionID))
+                await eventSink(
+                    ReadBackServerEvent(type: .queuePaused, sessionID: expectedSessionID)
+                )
             }
             throw SpeechCoordinatorError.queueLimitExceeded
         }
@@ -134,38 +190,201 @@ public actor SpeechCoordinator {
             )
         )
         await eventSink(
-            ReadBackServerEvent(type: .speechQueued, sessionID: sessionID, sequence: sequence)
+            ReadBackServerEvent(type: .speechQueued, sessionID: expectedSessionID, sequence: sequence)
         )
-        startWorkerIfNeeded(sessionID: sessionID)
+        // The sink can suspend. If the session ended meanwhile, starting a worker for it
+        // would leave `worker` set and block the next reading's worker.
+        guard sessionID == expectedSessionID else {
+            throw SpeechCoordinatorError.sessionNotActive
+        }
+        startWorkerIfNeeded(sessionID: expectedSessionID)
         return sequence
     }
 
-    public func finishInput() async {
-        guard let sessionID else {
+    /// Queues `chunks` in order, waiting while the pending-text limit is reached.
+    /// Returns the pause to put before the next chunk. Throws `.sessionNotActive` as
+    /// soon as the session ends, and `.queueLimitExceeded` for a chunk that is longer
+    /// than the limit and so can never fit.
+    public func enqueueWaitingForRoom(
+        _ chunks: [StreamedTextChunk],
+        sessionID expectedSessionID: String,
+        settings: SpeechSettings,
+        pauseBefore: Double
+    ) async throws -> Double {
+        var nextPause = pauseBefore
+        for chunk in chunks {
+            while true {
+                do {
+                    try await enqueue(
+                        sessionID: expectedSessionID,
+                        text: chunk.text,
+                        voice: settings.voice,
+                        languageCode: settings.languageCode,
+                        speed: settings.synthesisSpeed,
+                        pauseBefore: nextPause
+                    )
+                    nextPause = chunk.endsParagraph ? settings.paragraphPause : 0
+                    break
+                } catch SpeechCoordinatorError.queueLimitExceeded
+                    where chunk.text.count <= maximumPendingCharacters
+                {
+                    // A chunk plays for seconds, so a 25 ms poll adds no audible delay.
+                    let clock = ContinuousClock()
+                    try await clock.sleep(until: clock.now.advanced(by: .milliseconds(25)))
+                }
+            }
+        }
+        return nextPause
+    }
+
+    public func finishInput(sessionID expectedSessionID: String) async {
+        guard sessionID == expectedSessionID else {
             return
         }
         inputFinished = true
         if queue.isEmpty, worker == nil {
-            await completeSession(id: sessionID)
+            await completeSession(id: expectedSessionID)
         }
     }
 
-    public func waitUntilFinished(sessionID expectedSessionID: String) async {
+    /// Waits for `sessionID` to end and reports how it ended. Pass only an ID that
+    /// `replaceSession` accepted. If that session ended too long ago to be remembered,
+    /// a newer reading replaced it, so this reports `.interrupted`.
+    @discardableResult
+    public func waitUntilFinished(sessionID expectedSessionID: String) async -> SpeechSessionOutcome {
+        if let recent = recentOutcomes.last(where: { $0.id == expectedSessionID }) {
+            return recent.outcome
+        }
         guard sessionID == expectedSessionID else {
-            return
+            return .interrupted
         }
-        await withCheckedContinuation { continuation in
-            completionWaiters.append(continuation)
+        return await withCheckedContinuation { continuation in
+            completionWaiters[expectedSessionID, default: []].append(continuation)
         }
     }
 
-    public func cancel() async {
-        guard let activeID = sessionID, !isEndingSession else {
-            return
+    /// Waits until the audio of `sessionID` starts. Returns `nil` once it plays, or how
+    /// the session ended if it ended first, for example `.failed` when no segment could be
+    /// synthesized or `.interrupted` when a newer reading replaced it.
+    public func waitUntilAudioStarts(sessionID expectedSessionID: String) async -> SpeechSessionOutcome? {
+        if let recent = recentOutcomes.last(where: { $0.id == expectedSessionID }) {
+            return recent.outcome
         }
-        let sink = eventSink
-        isEndingSession = true
-        if let replayRecordingID { replayCache.abort(recordingID: replayRecordingID) }
+        guard sessionID == expectedSessionID else {
+            return .interrupted
+        }
+        if audioStarted {
+            return nil
+        }
+        return await withCheckedContinuation { continuation in
+            audioStartWaiters[expectedSessionID, default: []].append(continuation)
+        }
+    }
+
+    public func pause(sessionID expectedSessionID: String) async {
+        guard sessionID == expectedSessionID, let eventSink, !playbackPaused else { return }
+        let generation = sessionGeneration
+        playbackPaused = true
+        await player.pause()
+        guard sessionID == expectedSessionID,
+              sessionGeneration == generation,
+              playbackPaused
+        else { return }
+        await eventSink(ReadBackServerEvent(type: .playbackPaused, sessionID: expectedSessionID))
+    }
+
+    public func resume(sessionID expectedSessionID: String) async {
+        guard sessionID == expectedSessionID, let eventSink, playbackPaused else { return }
+        let generation = sessionGeneration
+        playbackPaused = false
+        await player.resume()
+        guard sessionID == expectedSessionID,
+              sessionGeneration == generation,
+              !playbackPaused
+        else { return }
+        resumePauseWaiters()
+        await eventSink(ReadBackServerEvent(type: .playbackResumed, sessionID: expectedSessionID))
+    }
+
+    // MARK: - Session transitions
+
+    /// Runs session transitions one at a time. Each one awaits the gate, the player,
+    /// and event sinks, so without this two transitions could interleave and leave
+    /// the gate owned by a session that is no longer current.
+    private func serialized<Result: Sendable>(
+        _ operation: @escaping @Sendable () async throws -> Result
+    ) async throws -> Result {
+        let previous = transitionTail
+        let task = Task {
+            await previous?.value
+            return try await operation()
+        }
+        transitionTail = Task { _ = try? await task.value }
+        return try await task.value
+    }
+
+    private func performReplace(id: String, events: @escaping EventSink) async throws {
+        do {
+            try await activityGate?.claimSpeech(sessionID: id)
+        } catch {
+            throw SpeechCoordinatorError.modelSwitchInProgress
+        }
+        if let previous = endCurrentSession(outcome: .interrupted) {
+            await player.stop()
+            await previous.sink(Self.finishedEvent(for: previous))
+        }
+
+        sessionID = id
+        sessionGeneration += 1
+        eventSink = events
+        sessionFailure = nil
+        queue.removeAll(keepingCapacity: true)
+        nextSequence = 0
+        pendingCharacters = 0
+        inputFinished = false
+        queuePaused = false
+        playbackPaused = false
+        audioStarted = false
+        replayRecordingID = replayCache.beginRecording()
+        publishActivity()
+        await events(ReadBackServerEvent(type: .sessionReady, sessionID: id))
+    }
+
+    private func performEnd(sessionID expectedSessionID: String?) async -> Bool {
+        guard let ended = endCurrentSession(matching: expectedSessionID, outcome: .stopped) else {
+            return false
+        }
+        await player.stop()
+        await ended.sink(Self.finishedEvent(for: ended))
+        await activityGate?.endSpeech(sessionID: ended.id)
+        return true
+    }
+
+    private func completeSession(id: String) async {
+        let outcome = sessionFailure.map(SpeechSessionOutcome.failed) ?? .completed
+        guard let ended = endCurrentSession(matching: id, outcome: outcome) else { return }
+        await ended.sink(Self.finishedEvent(for: ended))
+        await activityGate?.endSpeech(sessionID: id)
+    }
+
+    /// Clears the current session without suspending, so no other call can observe a
+    /// half-ended session. The caller performs the side effects afterwards.
+    private func endCurrentSession(
+        matching expectedSessionID: String? = nil,
+        outcome: SpeechSessionOutcome
+    ) -> EndedSession? {
+        guard let id = sessionID,
+              let sink = eventSink,
+              expectedSessionID == nil || expectedSessionID == id
+        else { return nil }
+
+        if let replayRecordingID {
+            if outcome == .completed {
+                replayCache.complete(recordingID: replayRecordingID)
+            } else {
+                replayCache.abort(recordingID: replayRecordingID)
+            }
+        }
         replayRecordingID = nil
         sessionGeneration += 1
         worker?.cancel()
@@ -173,46 +392,59 @@ public actor SpeechCoordinator {
         queue.removeAll(keepingCapacity: true)
         pendingCharacters = 0
         inputFinished = true
+        queuePaused = false
         playbackPaused = false
         resumePauseWaiters()
-        await player.stop()
-        if let sink {
-            await sink(ReadBackServerEvent(type: .sessionFinished, sessionID: activeID))
-        }
-        guard sessionID == activeID else { return }
         sessionID = nil
         eventSink = nil
-        isEndingSession = false
-        await activityGate?.endSpeech(sessionID: activeID)
-        resumeCompletionWaiters()
+        sessionFailure = nil
+        record(outcome, for: id)
+        publishActivity()
+        return EndedSession(id: id, sink: sink, outcome: outcome)
     }
 
-    public func pause() async {
-        guard let sessionID, let eventSink, !playbackPaused, !isEndingSession else { return }
-        let generation = sessionGeneration
-        playbackPaused = true
-        await player.pause()
-        guard self.sessionID == sessionID,
-              sessionGeneration == generation,
-              playbackPaused,
-              !isEndingSession
-        else { return }
-        await eventSink(ReadBackServerEvent(type: .playbackPaused, sessionID: sessionID))
+    private func record(_ outcome: SpeechSessionOutcome, for id: String) {
+        recentOutcomes.append((id, outcome))
+        if recentOutcomes.count > Self.recentOutcomeLimit {
+            recentOutcomes.removeFirst(recentOutcomes.count - Self.recentOutcomeLimit)
+        }
+        let waiters = completionWaiters.removeValue(forKey: id) ?? []
+        waiters.forEach { $0.resume(returning: outcome) }
+        audioStarted = false
+        let startWaiters = audioStartWaiters.removeValue(forKey: id) ?? []
+        startWaiters.forEach { $0.resume(returning: outcome) }
     }
 
-    public func resume() async {
-        guard let sessionID, let eventSink, playbackPaused, !isEndingSession else { return }
-        let generation = sessionGeneration
-        playbackPaused = false
-        await player.resume()
-        guard self.sessionID == sessionID,
-              sessionGeneration == generation,
-              !playbackPaused,
-              !isEndingSession
-        else { return }
-        resumePauseWaiters()
-        await eventSink(ReadBackServerEvent(type: .playbackResumed, sessionID: sessionID))
+    private func markAudioStarted(sessionID id: String) {
+        guard !audioStarted else { return }
+        audioStarted = true
+        let waiters = audioStartWaiters.removeValue(forKey: id) ?? []
+        waiters.forEach { $0.resume(returning: nil) }
     }
+
+    private static func finishedEvent(for session: EndedSession) -> ReadBackServerEvent {
+        var message: String?
+        if case .failed(let failure) = session.outcome {
+            message = failure
+        }
+        return ReadBackServerEvent(
+            type: .sessionFinished,
+            sessionID: session.id,
+            message: message,
+            reason: session.outcome.endReason
+        )
+    }
+
+    private func publishActivity() {
+        let isActive = sessionID != nil
+        activityContinuations.values.forEach { $0.yield(isActive) }
+    }
+
+    private func removeActivityContinuation(_ id: UUID) {
+        activityContinuations[id] = nil
+    }
+
+    // MARK: - Playback worker
 
     private func startWorkerIfNeeded(sessionID: String) {
         guard worker == nil else {
@@ -242,8 +474,6 @@ public actor SpeechCoordinator {
             let segment = queue.removeFirst()
             do {
                 try await waitForParagraphPause(segment.pauseBefore)
-            } catch is CancellationError {
-                return
             } catch {
                 return
             }
@@ -277,6 +507,7 @@ public actor SpeechCoordinator {
                 await waitUntilResumed()
                 try Task.checkCancellation()
                 guard sessionID == expectedSessionID, sessionGeneration == generation else { return }
+                markAudioStarted(sessionID: expectedSessionID)
                 try await player.play(speech.clip)
                 try Task.checkCancellation()
                 guard sessionID == expectedSessionID, sessionGeneration == generation else { return }
@@ -295,6 +526,7 @@ public actor SpeechCoordinator {
                         sequence: segment.sequence
                     )
                 )
+                guard sessionID == expectedSessionID, sessionGeneration == generation else { return }
                 if queuePaused, pendingCharacters < maximumPendingCharacters {
                     queuePaused = false
                     await sink(ReadBackServerEvent(type: .queueResumed, sessionID: expectedSessionID))
@@ -305,46 +537,17 @@ public actor SpeechCoordinator {
                 guard sessionID == expectedSessionID, sessionGeneration == generation else { return }
                 if let recordingID { replayCache.abort(recordingID: recordingID) }
                 pendingCharacters -= segment.text.count
+                let message = String(describing: error)
+                sessionFailure = sessionFailure ?? message
                 await sink(
                     ReadBackServerEvent(
                         type: .error,
                         sessionID: expectedSessionID,
                         sequence: segment.sequence,
-                        message: String(describing: error)
+                        message: message
                     )
                 )
             }
-        }
-    }
-
-    private func completeSession(id: String) async {
-        guard sessionID == id, !isEndingSession else {
-            return
-        }
-        let sink = eventSink
-        let generation = sessionGeneration
-        isEndingSession = true
-        if let replayRecordingID { replayCache.complete(recordingID: replayRecordingID) }
-        replayRecordingID = nil
-        worker = nil
-        playbackPaused = false
-        resumePauseWaiters()
-        if let sink {
-            await sink(ReadBackServerEvent(type: .sessionFinished, sessionID: id))
-        }
-        guard sessionID == id, sessionGeneration == generation else { return }
-        sessionID = nil
-        eventSink = nil
-        isEndingSession = false
-        await activityGate?.endSpeech(sessionID: id)
-        resumeCompletionWaiters()
-    }
-
-    private func resumeCompletionWaiters() {
-        let waiters = completionWaiters
-        completionWaiters.removeAll(keepingCapacity: true)
-        for waiter in waiters {
-            waiter.resume()
         }
     }
 

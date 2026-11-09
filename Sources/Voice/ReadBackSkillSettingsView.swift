@@ -12,7 +12,7 @@ struct ReadBackSkillSettingsView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("ReadBack Skill")
-                Text("Adapt and speak the latest reply from local ChatGPT, Codex, or Claude Code.")
+                Text("Adapt and speak the latest reply from ChatGPT, Codex, Claude Code, or Cursor.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text(controller.readBackSkillPresentation.status)

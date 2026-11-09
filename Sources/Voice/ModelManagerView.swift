@@ -1,5 +1,6 @@
 import Foundation
 import ReadBackCore
+import ReadBackService
 import SwiftUI
 
 struct ModelManagerView: View {
@@ -17,6 +18,13 @@ struct ModelManagerView: View {
             List {
                 Section("Agent Read-Back") {
                     ReadBackSkillSettingsView(controller: controller)
+                    MCPServerSettingsHeader(endpoint: controller.mcpServerSetup.endpoint)
+                    ForEach(MCPHost.allCases, id: \.self) { host in
+                        MCPHostSettingsRow(host: host, controller: controller)
+                    }
+                    if !controller.mcpConnections.allSatisfy({ $0.host != nil }) {
+                        MCPOtherClientsRow(controller: controller)
+                    }
                 }
 
                 Section("Installed") {
