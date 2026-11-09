@@ -49,7 +49,9 @@ public struct MCPClientConnection: Codable, Equatable, Sendable {
 /// Remembers which MCP clients connected and when, from the client info each sends in
 /// `initialize`. The stateless transport carries no client identity on later requests.
 public actor MCPClientRegistry {
+    /// Settings lists one row per client; 20 covers every host a user runs.
     static let maximumClients = 20
+    /// Longer than any real client name or version, short enough for one Settings row.
     static let maximumFieldLength = 80
 
     private let storeURL: URL?

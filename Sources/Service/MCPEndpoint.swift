@@ -9,6 +9,7 @@ import MCP
 /// every host reconnect. Also, the stateless transport keys in-flight requests by the
 /// JSON-RPC id that the client chooses, and those ids collide across clients (#265).
 struct MCPEndpoint: Sendable {
+    /// 1 MiB holds any text an agent should read aloud, and bounds memory per request.
     static let maximumBodySize = 1 << 20
 
     let tools: ReadBackMCPTools

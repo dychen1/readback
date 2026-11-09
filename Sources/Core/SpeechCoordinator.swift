@@ -54,6 +54,8 @@ public actor SpeechCoordinator {
         let outcome: SpeechSessionOutcome
     }
 
+    /// Waiters ask right after their session ends, and at most a few readings replace each
+    /// other in that time, so 16 recent outcomes is plenty.
     private static let recentOutcomeLimit = 16
 
     private let synthesizer: any SpeechSynthesizing
@@ -226,6 +228,7 @@ public actor SpeechCoordinator {
                 } catch SpeechCoordinatorError.queueLimitExceeded
                     where chunk.text.count <= maximumPendingCharacters
                 {
+                    // A chunk plays for seconds, so a 25 ms poll adds no audible delay.
                     let clock = ContinuousClock()
                     try await clock.sleep(until: clock.now.advanced(by: .milliseconds(25)))
                 }
