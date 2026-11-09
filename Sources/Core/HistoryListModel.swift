@@ -22,6 +22,10 @@ public final class HistoryListModel: ObservableObject {
     @Published public private(set) var actionError: String?
     @Published public private(set) var isConfirmingClear = false
 
+    /// A token stream changes its entry many times a second. Four reloads a second keep the
+    /// list current without a reload for each token.
+    public static let minimumRefreshInterval: Duration = .milliseconds(250)
+
     private let store: HistoryStore
     private let replay: @MainActor (HistoryEntry) -> Void
     private let stop: @MainActor () -> Void
@@ -95,14 +99,16 @@ public final class HistoryListModel: ObservableObject {
         }
     }
 
-    /// Loads the list again after each change. It stops when the caller cancels its task, for
-    /// example a view's `.task`. If nothing is selected, the first load selects the newest entry.
+    /// Loads the list again after changes, at most once per `minimumRefreshInterval`. Changes
+    /// in that time become one reload. It stops when the caller cancels its task, for example
+    /// a view's `.task`. If nothing is selected, the first load selects the newest entry.
     public func observeChanges() async {
         let changes = await store.changes()
         selectsFirstEntryOnLoad = true
         await refresh()
         for await _ in changes {
             await refresh()
+            try? await Task.sleep(for: Self.minimumRefreshInterval)
         }
     }
 

@@ -9,6 +9,9 @@ public struct HistoryRecorder: Sendable {
     public let store: HistoryStore
     private let now: @Sendable () -> Date
     private static let logger = Logger(subsystem: "ai.sanrin.readback", category: "history")
+    /// The most UTF-8 bytes one entry keeps. 64 KB holds about 10,000 words, longer than a
+    /// read-back anyone replays, and keeps a full history of 200 entries under 13 MB to load.
+    public static let maximumEntryBytes = 65_536
 
     public init(store: HistoryStore, now: @escaping @Sendable () -> Date = { Date() }) {
         self.store = store
@@ -19,10 +22,11 @@ public struct HistoryRecorder: Sendable {
     /// if the text is blank or the save fails.
     ///
     /// The entry does not keep leading whitespace. Playback chunk offsets start at the first
-    /// character that is not whitespace, so they then point into the stored text.
+    /// character that is not whitespace, so they then point into the stored text. The entry
+    /// keeps at most `maximumEntryBytes` of the text.
     @discardableResult
     public func record(_ text: String, source: HistorySource) async -> Int64? {
-        let text = String(text.drop(while: \.isWhitespace))
+        let text = Self.prefix(String(text.drop(while: \.isWhitespace)), maximumBytes: Self.maximumEntryBytes)
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         do {
             return try await store.insert(text, source: source, at: now())
@@ -36,6 +40,20 @@ public struct HistoryRecorder: Sendable {
 
     public func stream(source: HistorySource) -> HistoryStreamRecording {
         HistoryStreamRecording(recorder: self, source: source)
+    }
+
+    /// The longest prefix of `text` that has at most `maximumBytes` UTF-8 bytes and ends at a
+    /// character boundary.
+    static func prefix(_ text: String, maximumBytes: Int) -> String {
+        guard text.utf8.count > maximumBytes else { return text }
+        var bytes = 0
+        var end = text.startIndex
+        for index in text.indices {
+            bytes += text[index].utf8.count
+            guard bytes <= maximumBytes else { break }
+            end = text.index(after: index)
+        }
+        return String(text[..<end])
     }
 
     fileprivate func append(_ text: String, to id: Int64) async -> Bool {
@@ -53,12 +71,14 @@ public struct HistoryRecorder: Sendable {
 
 /// Records one streamed reading. It creates the entry when the first non-blank text arrives,
 /// then adds each later piece of text. An interrupted stream keeps all text sent before the stop.
+/// The entry stops growing at `HistoryRecorder.maximumEntryBytes`.
 public struct HistoryStreamRecording: Sendable {
     public static let disabled = HistoryStreamRecording(recorder: nil, source: .voicepipe)
 
     private let recorder: HistoryRecorder?
     private let source: HistorySource
     private var entryID: Int64?
+    private var storedBytes = 0
     private var isFinished = false
 
     fileprivate init(recorder: HistoryRecorder?, source: HistorySource) {
@@ -71,15 +91,26 @@ public struct HistoryStreamRecording: Sendable {
     public mutating func append(_ text: String) async -> Int64? {
         guard let recorder, !isFinished, !text.isEmpty else { return nil }
         if let entryID {
+            let kept = HistoryRecorder.prefix(
+                text,
+                maximumBytes: HistoryRecorder.maximumEntryBytes - storedBytes
+            )
             // Stop after a failed append, for example after the user deletes the entry. An
             // entry with a gap would replay text that is different from what the user heard.
-            let appended = await recorder.append(text, to: entryID)
-            isFinished = !appended
+            let appended = kept.isEmpty ? false : await recorder.append(kept, to: entryID)
+            storedBytes += kept.utf8.count
+            // A cut piece is the last one, so the entry never skips text in its middle.
+            isFinished = !appended || kept.utf8.count < text.utf8.count
             return nil
         }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        entryID = await recorder.record(text, source: source)
-        isFinished = entryID == nil
+        let kept = HistoryRecorder.prefix(
+            String(text.drop(while: \.isWhitespace)),
+            maximumBytes: HistoryRecorder.maximumEntryBytes
+        )
+        entryID = await recorder.record(kept, source: source)
+        storedBytes = kept.utf8.count
+        isFinished = entryID == nil || kept.utf8.count < text.drop(while: \.isWhitespace).utf8.count
         return entryID
     }
 

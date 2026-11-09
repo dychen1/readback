@@ -289,5 +289,31 @@ func historyListModelTests() -> [TestCase] {
             try expectEqual(model.entries.map(\.text), ["Just heard."], "observed entry")
             try expectEqual(model.selectedEntry?.text, "Just heard.", "first arrival is selected")
         },
+        TestCase(name: "history list reloads a token stream a few times, not once per token") { @MainActor in
+            let file = makeHistoryFileURL()
+            defer { removeHistoryDirectory(of: file) }
+            let (model, store, _) = makeModel(file: file)
+            let id = try await store.insert("Token", source: .voicepipe, at: Date())
+            let observer = Task { await model.observeChanges() }
+            defer { observer.cancel() }
+            for _ in 0..<200 where model.entries.isEmpty {
+                try await wait(for: .milliseconds(10))
+            }
+            var reloads = 0
+            let subscription = model.$state.dropFirst().sink { _ in reloads += 1 }
+            defer { subscription.cancel() }
+            let tokens = 40
+
+            for _ in 0..<tokens {
+                try await store.append(" token", to: id)
+            }
+            let expected = "Token" + String(repeating: " token", count: tokens)
+            for _ in 0..<200 where model.entries.first?.text != expected {
+                try await wait(for: .milliseconds(10))
+            }
+
+            try expectEqual(model.entries.first?.text, expected, "the list shows the last token")
+            try expect(reloads < tokens / 4, "\(tokens) tokens caused \(reloads) reloads")
+        },
     ]
 }

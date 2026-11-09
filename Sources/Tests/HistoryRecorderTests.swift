@@ -119,6 +119,27 @@ func historyRecorderTests() -> [TestCase] {
             try expectEqual(created, entries.first?.id, "the first append returns the new entry")
             try expectEqual(appended, nil, "later appends return nil")
         },
+        TestCase(name: "history entries keep at most the maximum entry size at a character boundary") {
+            let file = makeHistoryFileURL()
+            defer { removeHistoryDirectory(of: file) }
+            let recorder = HistoryRecorder(store: HistoryStore(fileURL: file))
+            let limit = HistoryRecorder.maximumEntryBytes
+            // "é" has two UTF-8 bytes, so it crosses the limit and must not be split.
+            let filler = String(repeating: "a", count: limit - 1)
+
+            await recorder.record(filler + "é and more", source: .clipboard)
+            var stream = recorder.stream(source: .voicepipe)
+            await stream.append(String(repeating: "b", count: limit - 3))
+            await stream.append("éé")
+            await stream.append(" Sent after the limit.")
+
+            let entries = try await recorder.store.entries()
+            try expectEqual(
+                entries.map(\.text),
+                [String(repeating: "b", count: limit - 3) + "é", filler],
+                "entries end at the last whole character under the limit"
+            )
+        },
         TestCase(name: "agent host names are cleaned before they are saved") {
             try expectEqual(HistorySource.agent(reportedHost: nil), .agent(host: nil), "missing host")
             try expectEqual(HistorySource.agent(reportedHost: "  \n"), .agent(host: nil), "blank host")
