@@ -37,7 +37,7 @@ func mcpServerSetupTests() -> [TestCase] {
                 "IPv6 endpoint"
             )
         },
-        TestCase(name: "mcp host recognises the client names hosts send") {
+        TestCase(name: "mcp host recognizes the client names hosts send") {
             try expectEqual(MCPHost(clientName: "cursor-vscode"), .cursor, "Cursor")
             try expectEqual(MCPHost(clientName: "claude-code"), .claudeCode, "Claude Code")
             try expectEqual(MCPHost(clientName: "codex-mcp-client"), .codex, "Codex")
@@ -54,22 +54,22 @@ func mcpServerSetupTests() -> [TestCase] {
             ]
             try expectEqual(
                 MCPConnectionStatus.text(for: .cursor, connections: connections, now: now, locale: locale),
-                "Connected just now",
+                "Last connected just now",
                 "recent connection"
             )
             try expectEqual(
                 MCPConnectionStatus.text(for: .claudeCode, connections: connections, now: now, locale: locale),
-                "Connected 2 minutes ago",
+                "Last connected 2 minutes ago",
                 "older connection"
             )
             try expectEqual(
                 MCPConnectionStatus.text(for: .codex, connections: connections, now: now, locale: locale),
-                "Not connected yet",
+                "No connection yet",
                 "never connected"
             )
             try expectEqual(
                 MCPConnectionStatus.otherClientsText(connections: connections, now: now, locale: locale),
-                "Also connected: inspector, last 1 hour ago",
+                "Other clients: inspector. Last connected 1 hour ago.",
                 "other clients"
             )
             try expectEqual(

@@ -38,8 +38,8 @@ public struct PublicSpeechRequest: Decodable, Sendable {
     }
 }
 
-/// Request context that keeps the connection's channel, so a handler can notice the
-/// client disconnecting. Hummingbird does not cancel a handler when that happens.
+/// Request context that keeps the connection's channel, so a handler can see when the
+/// client disconnects. Hummingbird does not cancel a handler when that happens.
 public struct ReadBackRequestContext: RequestContext, WebSocketRequestContext {
     public var coreContext: CoreRequestContextStorage
     public let webSocket: WebSocketHandlerReference<Self>
@@ -207,7 +207,7 @@ public final class ReadBackAPI: @unchecked Sendable {
                     ServiceError(
                         status: .conflict,
                         code: "stopped",
-                        message: "The reading was stopped before it finished."
+                        message: "A stop request ended the reading before it finished."
                     )
                 )
             case .failed(let message):
@@ -228,9 +228,9 @@ public final class ReadBackAPI: @unchecked Sendable {
         router.ws("/v1/readback/stream", shouldUpgrade: { [self] request, _ in
             isOriginAllowed(request) ? .upgrade([:]) : .dontUpgrade
         }) { [self] inbound, outbound, _ in
-            // The coordinator calls the sink while it holds its transition lock, so a
-            // client that stops reading must not be able to block it: events queue here
-            // and a separate task writes them in order.
+            // The coordinator calls the sink while it holds its transition lock. A client
+            // that stops reading must not block that lock, so events queue here and a
+            // separate task writes them in order.
             let (events, eventQueue) = AsyncStream.makeStream(of: ReadBackServerEvent.self)
             let encoder = self.encoder
             let writer = Task {
@@ -313,7 +313,7 @@ public final class ReadBackAPI: @unchecked Sendable {
             }
             await coordinator.cancel(sessionID: sessionID)
         } catch SpeechCoordinatorError.sessionNotActive {
-            // The reading ended or was replaced; the client already received
+            // The reading ended or a newer reading replaced it. The client already got
             // `session.finished` with the reason.
         } catch {
             await coordinator.cancel(sessionID: sessionID)
@@ -375,10 +375,10 @@ public final class ReadBackAPI: @unchecked Sendable {
     private static func describe(_ error: any Error) -> String {
         switch error as? DecodingError {
         case .keyNotFound(let key, _):
-            "Missing required field \"\(key.stringValue)\"."
+            "The required field \"\(key.stringValue)\" is missing."
         case .typeMismatch(_, let context), .valueNotFound(_, let context),
              .dataCorrupted(let context):
-            "Invalid field \"\(context.codingPath.map(\.stringValue).joined(separator: "."))\"."
+            "The field \"\(context.codingPath.map(\.stringValue).joined(separator: "."))\" has an invalid value."
         default:
             "The request body is not a valid speech request."
         }
@@ -400,11 +400,11 @@ public final class ReadBackAPI: @unchecked Sendable {
 
     private func isOriginAllowed(_ request: Request) -> Bool {
         // Most native local clients (voicepipe's URLSessionWebSocketTask, curl) never
-        // send an Origin header at all, so a missing header is always allowed. Some
-        // WebSocket client libraries (e.g. the vendored swift-websocket used in tests)
-        // send their own `ws://` URL without a port; browsers never send a `ws` origin.
-        // A browser origin must be this service itself: any other page, including one
-        // served from another loopback port such as a dev server, is refused.
+        // send an Origin header, so a missing header is always allowed. Some WebSocket
+        // client libraries, such as the vendored swift-websocket in tests, send their
+        // own `ws://` URL without a port. Browsers never send a `ws` origin. A browser
+        // origin must be this service itself. The check refuses any other page, even
+        // one from another loopback port such as a dev server.
         guard let origin = request.headers[.origin] else { return true }
         guard let url = URL(string: origin),
               let host = url.host,

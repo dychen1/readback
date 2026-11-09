@@ -56,7 +56,7 @@ public enum VoicePipeError: LocalizedError, Equatable, Sendable {
     case disconnected
     /// A newer reading, from any app or agent, replaced this one.
     case interrupted
-    /// The reading was stopped from ReadBack before it finished.
+    /// A stop request ended the reading before it finished.
     case stopped
 
     public var errorDescription: String? {
@@ -65,7 +65,7 @@ public enum VoicePipeError: LocalizedError, Equatable, Sendable {
         case .server(let message): "ReadBack reported an error: \(message)"
         case .disconnected: "The connection to ReadBack closed unexpectedly."
         case .interrupted: "A newer reading replaced this one."
-        case .stopped: "The reading was stopped in ReadBack."
+        case .stopped: "A stop request ended the reading."
         }
     }
 }

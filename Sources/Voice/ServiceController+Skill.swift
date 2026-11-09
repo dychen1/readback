@@ -92,7 +92,7 @@ extension ServiceController {
 
     func openCursorMCPInstall() {
         if NSWorkspace.shared.open(mcpServerSetup.cursorInstallLink) {
-            status = "Confirm adding the readback server in Cursor"
+            status = "Confirm the readback server in Cursor"
         } else {
             copy(mcpServerSetup.cursorConfiguration, confirmation: "Could not open Cursor. "
                 + "Copied the configuration for ~/.cursor/mcp.json instead.")

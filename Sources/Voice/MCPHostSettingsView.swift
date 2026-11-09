@@ -7,7 +7,7 @@ struct MCPServerSettingsHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("MCP Server")
-            Text("Connect an agent app to \(endpoint) so the skill can speak through its play tool.")
+            Text("Connect an agent app to \(endpoint). Then the skill can use the ReadBack play tool.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
@@ -65,7 +65,7 @@ struct MCPHostSettingsRow: View {
         switch host {
         case .cursor:
             controller.isCursorInstalled
-                ? "Opens Cursor to confirm adding the readback server."
+                ? "Opens Cursor. Confirm the readback server there."
                 : "Add this to ~/.cursor/mcp.json:"
         case .claudeCode, .codex:
             "Run in Terminal:"

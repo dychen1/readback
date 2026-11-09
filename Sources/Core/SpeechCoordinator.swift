@@ -19,7 +19,7 @@ public enum SpeechSessionOutcome: Equatable, Sendable {
     case completed
     /// A newer reading replaced it.
     case interrupted
-    /// Its own client cancelled it, or the app's Stop control ended it.
+    /// Its own client canceled it, or a stop request ended it.
     case stopped
     /// Every segment was attempted, but at least one failed to synthesize or play.
     case failed(String)
@@ -235,8 +235,8 @@ public actor SpeechCoordinator {
     }
 
     /// Waits for `sessionID` to end and reports how it ended. Pass only an ID that
-    /// `replaceSession` accepted; one that ended too long ago to be remembered can
-    /// only have been replaced, so it reports `.interrupted`.
+    /// `replaceSession` accepted. If that session ended too long ago to be remembered,
+    /// a newer reading replaced it, so this reports `.interrupted`.
     @discardableResult
     public func waitUntilFinished(sessionID expectedSessionID: String) async -> SpeechSessionOutcome {
         if let recent = recentOutcomes.last(where: { $0.id == expectedSessionID }) {

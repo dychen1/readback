@@ -27,7 +27,7 @@ func mcpEndpointTests() -> [TestCase] {
             }
             let connections = await fixture.clients.snapshot()
             try expectEqual(connections.map(\.clientName), ["claude-code"], "recorded client")
-            try expectEqual(connections.first?.host, .claudeCode, "recognised host")
+            try expectEqual(connections.first?.host, .claudeCode, "recognized host")
         },
         TestCase(name: "mcp play starts a reading and returns before playback finishes") {
             let fixture = MCPFixture(player: APIAudioPlayer(blocking: true))

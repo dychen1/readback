@@ -70,9 +70,9 @@ public enum MCPConnectionStatus {
         locale: Locale = .current
     ) -> String {
         guard let latest = connections.first(where: { $0.host == host }) else {
-            return "Not connected yet"
+            return "No connection yet"
         }
-        return "Connected \(relative(latest.lastConnected, now: now, locale: locale))"
+        return "Last connected \(relative(latest.lastConnected, now: now, locale: locale))"
     }
 
     /// Clients that are not one of the known hosts, or `nil` when there are none.
@@ -85,7 +85,7 @@ public enum MCPConnectionStatus {
         guard let latest = others.first else { return nil }
         let names = others.prefix(3).map(\.clientName).joined(separator: ", ")
         let more = others.count > 3 ? " and \(others.count - 3) more" : ""
-        return "Also connected: \(names)\(more), last \(relative(latest.lastConnected, now: now, locale: locale))"
+        return "Other clients: \(names)\(more). Last connected \(relative(latest.lastConnected, now: now, locale: locale))."
     }
 
     private static func relative(_ date: Date, now: Date, locale: Locale) -> String {

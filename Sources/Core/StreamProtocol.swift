@@ -75,7 +75,7 @@ public struct ReadBackServerEvent: Codable, Equatable, Sendable {
         case error
     }
 
-    /// Why a session ended; sent with `session.finished`.
+    /// Why a session ended. `session.finished` carries it.
     public enum EndReason: String, Codable, Sendable {
         case completed
         case interrupted

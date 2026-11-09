@@ -5,19 +5,19 @@ import ReadBackCore
 struct ReadBackMCPTools: Sendable {
     static let instructions = """
         ReadBack speaks text aloud on the user's Mac with local text-to-speech. \
-        Call play with text written for listening; it returns as soon as playback starts. \
-        Call stop to silence it.
+        Call play with text written for listening. Play returns when playback starts. \
+        Call stop to end the reading.
         """
 
     static let play = Tool(
         name: "play",
         title: "Read aloud",
         description: """
-            Read text aloud on the user's Mac through ReadBack. Pass the complete text \
-            to speak, written for listening: plain sentences without Markdown, code, or \
-            raw URLs. Returns as soon as playback starts and does not wait for it to \
-            finish. A new reading stops whatever ReadBack was already reading, whichever \
-            app or agent started it.
+            Reads text aloud on the user's Mac through ReadBack. Pass the complete text \
+            to speak. Write it for listening, as plain sentences without Markdown, code, \
+            or raw URLs. The tool returns when playback starts. It does not wait for \
+            playback to finish. A new reading stops the current reading, whatever app or \
+            agent started it.
             """,
         inputSchema: .object([
             "type": "object",
@@ -46,8 +46,8 @@ struct ReadBackMCPTools: Sendable {
         name: "stop",
         title: "Stop reading",
         description: """
-            Stop whatever ReadBack is reading aloud, whichever app or agent started it. \
-            Does nothing when ReadBack is silent.
+            Stops the current reading, whatever app or agent started it. If ReadBack is \
+            not reading, the tool does nothing.
             """,
         inputSchema: .object([
             "type": "object",
@@ -89,7 +89,7 @@ struct ReadBackMCPTools: Sendable {
             let stopped = await coordinator.stop()
             return Self.result(stopped ? "Stopped the current reading." : "Nothing was playing.")
         default:
-            throw MCPError.invalidParams("Unknown tool: \(parameters.name)")
+            throw MCPError.invalidParams("ReadBack has no tool named \"\(parameters.name)\".")
         }
     }
 

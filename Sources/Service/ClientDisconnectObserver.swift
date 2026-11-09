@@ -1,11 +1,11 @@
 import NIOCore
 
-/// Reports when an HTTP client goes away while its request is still being handled.
+/// Reports when an HTTP client goes away while ReadBack still handles its request.
 ///
-/// Hummingbird enables remote half-closure, so a client hanging up usually arrives as
-/// `inputClosed` while the channel stays open; the channel only closes once the
-/// response is written. A client that half-closes on purpose and still waits for the
-/// response is treated as gone too; no ReadBack client does that.
+/// Hummingbird enables remote half-closure, so a client that hangs up usually arrives
+/// as `inputClosed` while the channel stays open. The channel closes only after the
+/// response is written. This also treats a client that half-closes on purpose and
+/// still waits for the response as gone. No ReadBack client does that.
 final class ClientDisconnectObserver: ChannelInboundHandler, RemovableChannelHandler {
     typealias InboundIn = ByteBuffer
 

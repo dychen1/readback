@@ -14,7 +14,7 @@ public enum MCPHost: String, CaseIterable, Codable, Sendable {
         }
     }
 
-    /// Recognises the client name a host sends in `initialize`, such as
+    /// Recognizes the client name a host sends in `initialize`, such as
     /// `cursor-vscode`, `claude-code`, or `codex-mcp-client`.
     public init?(clientName: String) {
         let name = clientName.lowercased()
@@ -58,7 +58,7 @@ public actor MCPClientRegistry {
     private var continuations: [UUID: AsyncStream<[MCPClientConnection]>.Continuation] = [:]
 
     /// Loads earlier connections from `storeURL` when given, so status survives an app
-    /// restart; hosts do not reconnect to a stateless server on their own.
+    /// restart. Hosts do not reconnect to a stateless server on their own.
     public init(storeURL: URL? = nil, now: @escaping @Sendable () -> Date = Date.init) {
         self.storeURL = storeURL
         self.now = now
@@ -111,8 +111,8 @@ public actor MCPClientRegistry {
             at: storeURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        // Connection status is a convenience; an unwritable file only costs the
-        // status after the next restart.
+        // Connection status is a convenience. If the file is not writable, only the
+        // status after the next restart is lost.
         try? data.write(to: storeURL, options: .atomic)
     }
 

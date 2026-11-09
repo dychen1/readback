@@ -23,7 +23,7 @@ public enum ReadingStartError: Error, Equatable, Sendable {
 
     public static let speedRange = PlaybackRate.minimum...PlaybackRate.maximum
 
-    /// Whether the caller can fix the request; otherwise ReadBack is not ready.
+    /// Whether the caller can fix the request. If not, ReadBack is not ready.
     public var isInvalidRequest: Bool {
         if case .modelUnavailable = self { return false }
         return true

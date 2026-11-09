@@ -176,9 +176,9 @@ public struct ReadBackSkillInstaller: @unchecked Sendable {
     }
 
     /// Replaces the managed package with the bundled one when ReadBack owns the
-    /// installed package and its version differs. Host folders are never touched:
-    /// linked hosts see the update through their links, and a conflicting folder stays
-    /// as it is. Returns whether the package was updated.
+    /// installed package and its version differs. This never changes host folders.
+    /// Linked hosts see the update through their links, and a conflicting folder stays
+    /// as it is. Returns whether the package changed.
     @discardableResult
     public func updateInstalledPackageIfNeeded() throws -> Bool {
         guard packageIsComplete(at: sourceURL),

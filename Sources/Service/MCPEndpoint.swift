@@ -6,8 +6,8 @@ import MCP
 ///
 /// Each HTTP request gets a fresh `Server` and transport. The SDK accepts `initialize`
 /// only once per server (swift-sdk #144, #219), so a long-lived server would reject
-/// every host reconnect, and the stateless transport keys in-flight requests by the
-/// client-chosen JSON-RPC id, which collides across clients (#265).
+/// every host reconnect. Also, the stateless transport keys in-flight requests by the
+/// JSON-RPC id that the client chooses, and those ids collide across clients (#265).
 struct MCPEndpoint: Sendable {
     static let maximumBodySize = 1 << 20
 

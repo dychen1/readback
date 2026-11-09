@@ -141,7 +141,7 @@ struct ReadBackPopover: View {
                     Label("Stop", systemImage: "stop.fill")
                 }
                 .disabled(!controller.isReading)
-                .help("Stop the current reading, whichever app or agent started it")
+                .help("Stop the current reading, whatever app or agent started it")
             }
 
             HStack {
@@ -778,7 +778,7 @@ final class ServiceController: ObservableObject {
             } catch VoicePipeError.interrupted {
                 finishClipboardRequest(
                     requestID: requestID,
-                    status: "Read-back replaced by a newer reading"
+                    status: "A newer reading replaced the read-back"
                 )
             } catch VoicePipeError.stopped {
                 finishClipboardRequest(requestID: requestID, status: "Read-back stopped")

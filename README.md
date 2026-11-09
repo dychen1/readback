@@ -76,7 +76,7 @@ Copy up to 2,000 characters, then press `Option-Command-R` (`⌥⌘R`). Press th
 
 The menu-bar popover has the same Read Clipboard action.
 
-ReadBack plays one reading at a time. A new reading from any source — the shortcut, a voice preview, `voicepipe`, the HTTP API, or an agent — stops the current one and starts from the beginning. The popover's **Stop** button ends the current reading, whatever started it.
+ReadBack plays one reading at a time. A new reading stops the current one. This applies to every source: the shortcut, a voice preview, `voicepipe`, the HTTP API, and agents. The popover's **Stop** button ends the current reading, whatever started it.
 
 ## Agent read-back
 
@@ -85,15 +85,15 @@ ReadBack serves an [MCP](https://modelcontextprotocol.io) server at `http://127.
 - `play(text)` reads the text aloud. It returns as soon as playback starts and replaces any current reading.
 - `stop()` ends the current reading.
 
-**Settings → Agent Read-Back** shows how to connect each host with the port ReadBack actually uses, and when each host last connected. ReadBack never edits another app's configuration; you run or confirm the step yourself:
+**Settings → Agent Read-Back** shows the setup step for each host, with the port that ReadBack uses. It also shows when each host last connected. ReadBack never edits the configuration of another app. You do each step yourself:
 
 | Host | Connect |
 | --- | --- |
-| Cursor | Click **Add to Cursor**, then confirm in Cursor. Without Cursor installed, Settings shows the entry for `~/.cursor/mcp.json`. |
+| Cursor | Click **Add to Cursor**, then confirm in Cursor. If Cursor is not installed, Settings shows the entry to add to `~/.cursor/mcp.json`. |
 | Claude Code | `claude mcp add --transport http --scope user readback http://127.0.0.1:51280/mcp` |
 | Codex | `codex mcp add readback --url http://127.0.0.1:51280/mcp` |
 
-The same section installs the `readback` skill for ChatGPT and Codex, Claude Code, and Cursor. The skill turns the latest agent answer into a spoken brief and plays it with the MCP `play` tool when the host has it. ReadBack keeps the skill in `~/Library/Application Support/ReadBack/Skills/readback` and links each host's skills folder to it. At launch, ReadBack updates that copy to the version bundled with the app if ReadBack installed it; it never changes a skill folder it does not own.
+The same section installs the `readback` skill for ChatGPT and Codex, Claude Code, and Cursor. The skill turns the latest agent answer into a spoken brief and plays it with the MCP `play` tool when the host has it. ReadBack keeps the skill in `~/Library/Application Support/ReadBack/Skills/readback` and links each host's skills folder to it. If ReadBack installed that copy, ReadBack updates it to the bundled version at launch. ReadBack never changes a skill folder that it does not own.
 
 ## Models and languages
 
@@ -173,7 +173,7 @@ Scripts/swiftw build
 your-command | .build/debug/voicepipe
 ```
 
-`voicepipe` sends text as it arrives, commits buffered input after 300 milliseconds without input, and exits after playback finishes. If a newer reading replaces it or it is stopped, it says so and exits with status 1. It does not accept a model option; it always uses the model active in the app.
+`voicepipe` sends text as it arrives, commits buffered input after 300 milliseconds without input, and exits after playback finishes. If a newer reading or a stop request ends its reading, it prints the reason and exits with status 1. It does not accept a model option. It always uses the model that is active in the app.
 
 ## HTTP API
 
@@ -211,17 +211,17 @@ curl \
   http://127.0.0.1:51280/play
 ```
 
-`/play` replaces any current reading, reads long text in sentence-sized chunks with the paragraph pause between paragraphs, and responds when the reading ends. Closing the connection early stops the reading. Errors use a JSON body such as `{"error":{"code":"empty_input","message":"The text to read is empty."}}`:
+`/play` replaces any current reading. It reads long text in chunks of up to 250 characters and puts the paragraph pause between paragraphs. It responds when the reading ends. If the client closes the connection early, the reading stops. Errors use a JSON body such as `{"error":{"code":"empty_input","message":"The text to read is empty."}}`:
 
 | Status | Codes | Meaning |
 | --- | --- | --- |
-| `200` | — | The whole text was read: `{"ok":true}` |
-| `400` | `invalid_json`, `invalid_request`, `empty_input`, `invalid_speed`, `invalid_voice`, `model_selection_not_allowed` | The request cannot be read; nothing was interrupted |
-| `403` | `origin_not_allowed` | A browser page other than ReadBack's own origin sent the request; nothing was interrupted |
-| `409` | `interrupted`, `stopped` | A newer reading replaced this one, or it was stopped |
-| `413` | `request_too_large` | The body is too large |
-| `500` | `speech_failed` | Synthesis or playback failed |
-| `503` | `model_not_ready` | The model is loading, switching, or installing; nothing was interrupted |
+| `200` | None | ReadBack read the whole text. The body is `{"ok":true}`. |
+| `400` | `invalid_json`, `invalid_request`, `empty_input`, `invalid_speed`, `invalid_voice`, `model_selection_not_allowed` | The request is not valid. The current reading continues. |
+| `403` | `origin_not_allowed` | A browser page from a different origin sent the request. The current reading continues. |
+| `409` | `interrupted`, `stopped` | A newer reading or a stop request ended this reading. |
+| `413` | `request_too_large` | The body is too large. |
+| `500` | `speech_failed` | Synthesis or playback failed. |
+| `503` | `model_not_ready` | The model is loading, switching, or installing. The current reading continues. |
 
 `speed` must be between `0.5` and `2`.
 
@@ -244,7 +244,7 @@ Client events:
 
 Server event types include `session.ready`, `speech.queued`, `speech.started`, `speech.finished`, `playback.paused`, `playback.resumed`, `queue.paused`, `queue.resumed`, `session.finished`, and `error`.
 
-A new connection replaces the current reading. `session.finished` carries a `reason`: `completed`, `interrupted` (a newer reading replaced it), `stopped`, or `failed`. After that, the connection's events no longer affect playback.
+A new connection replaces the current reading. `session.finished` has a `reason`: `completed`, `interrupted` (a newer reading replaced it), `stopped`, or `failed`. After `session.finished`, messages from that connection have no effect on playback.
 
 
 ## Local files
@@ -270,7 +270,7 @@ Model weights and generated app bundles are not tracked by Git.
 ## Privacy and limits
 
 - Text, inference, generated audio, and playback stay on the Mac.
-- The local service, including the MCP server, has no authentication. Do not expose it beyond loopback. It refuses browser origins other than its own `http://127.0.0.1:<port>`, including pages served from other loopback ports, and the MCP server also refuses requests whose `Host` is not a loopback address.
+- The local service, including the MCP server, has no authentication. Do not expose it beyond loopback. It refuses requests from browser pages on other origins, which includes pages on other loopback ports. Its own origin is `http://127.0.0.1:<port>`. The MCP server also refuses a request if its `Host` is not a loopback address.
 - ReadBack plays one reading and keeps one model loaded at a time.
 - The local model slot supports known runtime profiles, not arbitrary code or repositories.
 - The app has no automatic updater yet.
