@@ -96,11 +96,38 @@ func voicePipeTextSpeakerTests() -> [TestCase] {
             }
 
             let pieces = await client.appended
+            let limit = VoicePipeTextSpeaker.maximumAppendBytes
             try expect(pieces.count > 1, "long text is split, got \(pieces.count) piece(s)")
-            try expect(pieces.allSatisfy { $0.utf8.count <= 2_000 }, "each piece fits the limit")
+            try expect(pieces.allSatisfy { $0.utf8.count <= limit }, "each piece fits the limit")
             try expectEqual(pieces.joined(), text, "pieces keep every character in order")
+            try expectEqual(
+                pieces.map(\.count).reduce(0, +),
+                text.count,
+                "every piece boundary is a character boundary"
+            )
+            try expect(
+                pieces.dropLast().allSatisfy { $0.last?.isWhitespace == true },
+                "each piece ends after a space, not inside a word"
+            )
             let session = await readySession.value
             try expectEqual(session, "recorded-session", "onReady gets the session ID")
+        },
+        TestCase(name: "voicepipe speaker pieces fall back to character boundaries") {
+            // One character with many combining marks is larger than the limit.
+            let large = "e" + String(repeating: "\u{0301}", count: 10)
+            let limit = 8
+            try expect(large.utf8.count > limit, "the test character is larger than the limit")
+
+            try expectEqual(
+                VoicePipeTextSpeaker.appendPieces(of: "a " + large + " b", maximumBytes: limit),
+                ["a ", large, " b"],
+                "a character larger than the limit goes out alone, above the limit"
+            )
+            try expectEqual(
+                VoicePipeTextSpeaker.appendPieces(of: "abcdefghij", maximumBytes: limit),
+                ["abcdefgh", "ij"],
+                "text without whitespace ends a piece at the limit"
+            )
         },
         TestCase(name: "stale clipboard cancellation cannot stop a newer request") {
             let oldClient = StubVoicePipeSessionClient()

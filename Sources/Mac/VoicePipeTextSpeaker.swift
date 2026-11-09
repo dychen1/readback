@@ -18,7 +18,7 @@ public actor VoicePipeTextSpeaker: ClipboardSpeechPlaying {
 
     /// The most UTF-8 bytes of text that one `text.append` message carries. JSON escapes can
     /// make a message up to six times larger, and the server accepts frames up to 16 KB.
-    static let maximumAppendBytes = 2_000
+    public static let maximumAppendBytes = 2_000
 
     private struct ActiveSession: Sendable {
         let requestID: UUID
@@ -114,24 +114,36 @@ public actor VoicePipeTextSpeaker: ClipboardSpeechPlaying {
         return true
     }
 
-    /// Splits `text` at character boundaries into pieces of at most `maximumBytes` UTF-8
-    /// bytes. A single character that is larger than the limit becomes its own piece.
-    static func appendPieces(of text: String, maximumBytes: Int = maximumAppendBytes) -> [String] {
+    /// Splits `text` into pieces of at most `maximumBytes` UTF-8 bytes. A piece ends after the
+    /// last whitespace that fits, so the server does not see a word cut in two. A piece with no
+    /// whitespace ends at a character boundary. A single character that is larger than the limit
+    /// goes out alone, above the limit, because a character cannot be split.
+    public static func appendPieces(of text: String, maximumBytes: Int = maximumAppendBytes) -> [String] {
         var pieces: [String] = []
-        var piece = ""
-        var pieceBytes = 0
-        for character in text {
-            let bytes = character.utf8.count
-            if pieceBytes + bytes > maximumBytes, !piece.isEmpty {
-                pieces.append(piece)
-                piece = ""
-                pieceBytes = 0
+        var start = text.startIndex
+        var index = text.startIndex
+        var bytes = 0
+        // The end of the last whitespace in the current piece, and the piece size up to it.
+        var lastBreak: (index: String.Index, bytes: Int)?
+        while index < text.endIndex {
+            let character = text[index]
+            let size = character.utf8.count
+            if bytes + size > maximumBytes, start < index {
+                let end = lastBreak?.index ?? index
+                pieces.append(String(text[start..<end]))
+                bytes -= lastBreak?.bytes ?? bytes
+                start = end
+                lastBreak = nil
+                continue
             }
-            piece.append(character)
-            pieceBytes += bytes
+            bytes += size
+            index = text.index(after: index)
+            if character.isWhitespace {
+                lastBreak = (index, bytes)
+            }
         }
-        if !piece.isEmpty {
-            pieces.append(piece)
+        if start < text.endIndex {
+            pieces.append(String(text[start...]))
         }
         return pieces
     }
