@@ -216,7 +216,7 @@ curl \
 | Status | Codes | Meaning |
 | --- | --- | --- |
 | `200` | None | ReadBack read the whole text. The body is `{"ok":true}`. |
-| `400` | `invalid_json`, `invalid_request`, `empty_input`, `invalid_speed`, `invalid_voice`, `model_selection_not_allowed` | The request is not valid. The current reading continues. |
+| `400` | `invalid_json`, `invalid_request`, `empty_input`, `invalid_speed`, `invalid_voice`, `invalid_language`, `model_selection_not_allowed` | The request is not valid. The current reading continues. |
 | `403` | `origin_not_allowed` | A browser page from a different origin sent the request. The current reading continues. |
 | `409` | `interrupted`, `stopped` | A newer reading or a stop request ended this reading. |
 | `413` | `request_too_large` | The body is too large. |

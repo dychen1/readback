@@ -389,6 +389,7 @@ public final class ReadBackAPI: @unchecked Sendable {
         case .emptyText: "empty_input"
         case .speedOutOfRange: "invalid_speed"
         case .invalidVoice: "invalid_voice"
+        case .invalidLanguage: "invalid_language"
         case .modelUnavailable: "model_not_ready"
         }
         return ServiceError(

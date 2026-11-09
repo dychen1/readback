@@ -19,6 +19,7 @@ public enum ReadingStartError: Error, Equatable, Sendable {
     case emptyText
     case speedOutOfRange(Double)
     case invalidVoice(String)
+    case invalidLanguage(String)
     case modelUnavailable(String)
 
     public static let speedRange = PlaybackRate.minimum...PlaybackRate.maximum
@@ -38,6 +39,8 @@ public enum ReadingStartError: Error, Equatable, Sendable {
                 + "\(Self.speedRange.lowerBound)–\(Self.speedRange.upperBound)."
         case .invalidVoice(let voice):
             "The active model has no voice named \"\(voice)\"."
+        case .invalidLanguage(let language):
+            "The active model has no language \"\(language)\"."
         case .modelUnavailable(let reason):
             reason
         }
@@ -92,6 +95,8 @@ public struct ReadingStarter: Sendable {
             )
         } catch ModelManagerError.invalidVoice(let voice) {
             throw .invalidVoice(voice)
+        } catch ModelManagerError.invalidLanguage(let language) {
+            throw .invalidLanguage(language)
         } catch {
             throw .modelUnavailable(Self.notReadyMessage)
         }

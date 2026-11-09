@@ -250,6 +250,20 @@ func modelManagerTests() -> [TestCase] {
                 try expectEqual(error, .invalidVoice("../../../../etc/passwd"), "rejected voice")
             }
         },
+        TestCase(name: "model manager rejects a language outside the active model's catalog") {
+            let fixture = try ModelManagerFixture()
+            defer { fixture.remove() }
+            await fixture.manager.warmConfiguredModel()
+
+            do {
+                _ = try await fixture.manager.replayKey(
+                    for: SpeechRequest(input: "hello", voice: nil, languageCode: "xx", speed: 1, format: .wav)
+                )
+                throw TestFailure(description: "an unknown language code must be rejected")
+            } catch let error as ModelManagerError {
+                try expectEqual(error, .invalidLanguage("xx"), "rejected language")
+            }
+        },
         TestCase(name: "model manager gives local Chatterbox the standard curated controls") {
             let fixture = try ModelManagerFixture(localRuntime: .chatterboxTurbo)
             defer { fixture.remove() }

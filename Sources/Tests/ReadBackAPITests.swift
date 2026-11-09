@@ -106,6 +106,9 @@ actor APITestModelManager: ModelManaging {
         if request.voice == "missing" {
             throw ModelManagerError.invalidVoice("missing")
         }
+        if request.languageCode == "xx" {
+            throw ModelManagerError.invalidLanguage("xx")
+        }
         return nil
     }
 
@@ -244,6 +247,7 @@ func readBackAPITests() -> [TestCase] {
                 (#"{"input":42}"#, "invalid_request"),
                 (#"{"input":"hello","speed":9}"#, "invalid_speed"),
                 (#"{"input":"hello","voice":"missing"}"#, "invalid_voice"),
+                (#"{"input":"hello","lang_code":"xx"}"#, "invalid_language"),
                 (#"{"input":"hello","model":"kokoro"}"#, "model_selection_not_allowed"),
             ]
 
