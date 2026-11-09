@@ -81,18 +81,19 @@ public struct HistoryDateLabels: Sendable {
         self.locale = locale
     }
 
-    /// Puts entries into one group for each day. The groups keep the order of the entries.
+    /// Puts entries into one group for each day, in the order of the first entry of each day.
+    /// Each group keeps the order of its entries. Entries are in ID order, so a clock that moved
+    /// back can put one day on both sides of another. That day still gets one group.
     public func groups(_ entries: [HistoryEntry], now: Date) -> [HistoryDayGroup] {
         var groups: [HistoryDayGroup] = []
+        var groupIndexByDay: [Date: Int] = [:]
         for entry in entries {
             let day = calendar.startOfDay(for: entry.createdAt)
-            if let last = groups.last, last.id == day {
-                groups[groups.count - 1] = HistoryDayGroup(
-                    id: day,
-                    title: last.title,
-                    entries: last.entries + [entry]
-                )
+            if let index = groupIndexByDay[day] {
+                let group = groups[index]
+                groups[index] = HistoryDayGroup(id: day, title: group.title, entries: group.entries + [entry])
             } else {
+                groupIndexByDay[day] = groups.count
                 groups.append(
                     HistoryDayGroup(id: day, title: dayTitle(for: entry.createdAt, now: now), entries: [entry])
                 )

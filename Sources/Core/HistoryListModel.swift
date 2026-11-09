@@ -21,6 +21,9 @@ public final class HistoryListModel: ObservableObject {
     /// to `nil`.
     @Published public private(set) var actionError: String?
     @Published public private(set) var isConfirmingClear = false
+    /// The date that day titles such as "Today" count from. The window calls
+    /// `calendarDayDidChange()` at midnight, so the titles do not go stale.
+    @Published public private(set) var now = Date()
 
     /// A token stream changes its entry many times a second. Four reloads a second keep the
     /// list current without a reload for each token.
@@ -110,6 +113,10 @@ public final class HistoryListModel: ObservableObject {
             await refresh()
             try? await Task.sleep(for: Self.minimumRefreshInterval)
         }
+    }
+
+    public func calendarDayDidChange() {
+        now = Date()
     }
 
     // MARK: - Playback

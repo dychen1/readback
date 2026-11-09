@@ -45,13 +45,16 @@ struct HistoryView: View {
             Text("You cannot undo this.")
         }
         .task { await model.observeChanges() }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
+            model.calendarDayDidChange()
+        }
     }
 
     // MARK: - Sidebar
 
     private var sidebar: some View {
         List(selection: $model.selectedEntryID) {
-            ForEach(labels.groups(model.entries, now: Date())) { group in
+            ForEach(labels.groups(model.entries, now: model.now)) { group in
                 Section(group.title) {
                     ForEach(group.entries) { entry in
                         HistoryRow(

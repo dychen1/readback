@@ -74,6 +74,14 @@ func historyPresentationTests() -> [TestCase] {
             try expectEqual(groups.map(\.title), ["Today", "Yesterday", "October 28"], "group titles")
             try expectEqual(groups.map { $0.entries.map(\.id) }, [[4, 3], [2], [1]], "group entries")
             try expectEqual(labels.groups([], now: now), [], "no groups without entries")
+
+            // The clock moved back between entries 2 and 1, so their day appears twice in ID order.
+            let afterClockChange = labels.groups(
+                [entry(3, date(2026, 11, 8, 9, 0)), entry(2, date(2026, 11, 7, 9, 0)), entry(1, date(2026, 11, 8, 8, 0))],
+                now: now
+            )
+            try expectEqual(afterClockChange.map(\.title), ["Today", "Yesterday"], "one group for each day")
+            try expectEqual(afterClockChange.map { $0.entries.map(\.id) }, [[3, 1], [2]], "merged group entries")
         },
         TestCase(name: "history row labels for VoiceOver name the state") {
             let heard = entry(
