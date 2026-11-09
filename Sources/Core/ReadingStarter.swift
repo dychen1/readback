@@ -57,24 +57,29 @@ public struct ReadingStarter: Sendable {
     private let coordinator: SpeechCoordinator
     private let modelManager: any ModelManaging
     private let speechSettings: SpeechSettingsStore
+    private let history: HistoryRecorder?
 
     public init(
         coordinator: SpeechCoordinator,
         modelManager: any ModelManaging,
-        speechSettings: SpeechSettingsStore
+        speechSettings: SpeechSettingsStore,
+        history: HistoryRecorder? = nil
     ) {
         self.coordinator = coordinator
         self.modelManager = modelManager
         self.speechSettings = speechSettings
+        self.history = history
     }
 
     /// Starts `request` and returns its session ID once it is the current reading.
     /// Its text keeps queuing in the background, so this returns before playback
     /// finishes. Throws `ReadingStartError` before touching the current reading.
+    /// When `historySource` is not `nil`, the reading becomes a history entry as it starts.
     /// `isAbandoned` is checked just before the current reading is replaced, so a caller
     /// that left during validation interrupts nothing.
     public func start(
         _ request: ReadingRequest,
+        historySource: HistorySource? = nil,
         isAbandoned: @Sendable () -> Bool = { false }
     ) async throws(ReadingStartError) -> String {
         let text = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -117,7 +122,14 @@ public struct ReadingStarter: Sendable {
         } catch {
             throw .modelUnavailable(Self.switchingMessage)
         }
-        Task { [coordinator] in
+        Task { [coordinator, history] in
+            // The history write runs here, not before `start` returns. The link does nothing
+            // if the reading already ended.
+            if let history, let historySource,
+               let entryID = await history.record(text, source: historySource)
+            {
+                await coordinator.linkHistoryEntry(entryID, toSession: id)
+            }
             var chunker = StreamingTextChunker()
             let chunks = chunker.append(text) + (chunker.flush().map { [$0] } ?? [])
             do {

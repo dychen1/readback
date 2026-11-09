@@ -101,6 +101,7 @@ extension ServiceController {
                 status = "Voice: \(voice.displayName)"
                 startClipboardSpeech(
                     "test, hello world",
+                    purpose: .voicePreview,
                     completionStatus: "Voice preview finished"
                 )
             } catch {
@@ -130,6 +131,7 @@ extension ServiceController {
                 status = "Language: \(language.displayName)"
                 startClipboardSpeech(
                     "test, hello world",
+                    purpose: .voicePreview,
                     completionStatus: "Language preview finished"
                 )
             } catch {

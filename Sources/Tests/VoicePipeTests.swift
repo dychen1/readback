@@ -150,6 +150,8 @@ func voicePipeTests() -> [TestCase] {
             )
             let client = VoicePipeClient(socket: socket)
             try await client.connect()
+            let sessionID = await client.sessionID
+            try expectEqual(sessionID, "session-1", "client keeps the server session ID")
 
             let cancellation = Task { await client.cancel() }
             let event = await socket.nextSentEvent()

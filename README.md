@@ -85,6 +85,8 @@ ReadBack serves an [MCP](https://modelcontextprotocol.io) server at `http://127.
 - `play(text)` reads the text aloud. It returns as soon as playback starts and replaces any current reading.
 - `stop()` ends the current reading.
 
+History shows the name that the host sends when it connects. Only the exact names that Claude Code, Codex, and Cursor send show as "Claude Code", "Codex", and "Cursor". Other names show as sent. The response to `initialize` has an `Mcp-Session-Id` header. ReadBack uses this session ID only to find the host name when a `play` call arrives.
+
 **Settings → Agent Read-Back** shows the setup step for each host, with the port that ReadBack uses. It also shows when each host last connected. ReadBack never edits the configuration of another app. You do each step yourself:
 
 | Host | Connect |
@@ -137,8 +139,28 @@ The popover provides:
 - A **Stop** button that ends the current reading, whatever started it
 - Start, stop, launch-at-login, and clipboard controls
 - A Settings window for agent read-back setup, model installs, removal, and local model registration
+- A History window that replays recent read-backs
 
 ReadBack removes common Markdown markers while it keeps readable text and paragraph breaks.
+
+
+### History
+
+Choose **History…** in the popover to see the last 200 read-backs, newest first. The list on the left groups entries by day. Each row shows the first sentence, the source, and the time. The source is the agent name (for example Cursor), the clipboard, or voicepipe. The right side shows the full text of the selected entry.
+
+**Play** replaces the current reading and reads the entry again with the current voice. A replay does not add a new entry. **Delete** removes the selected entry at once. **Clear History…** asks for confirmation, then deletes all entries. ReadBack does not save voice previews.
+
+While the selected entry plays, the right side highlights the part that plays now. ReadBack reads text in parts of up to about 250 characters, so the highlight moves one part at a time. Text that already played turns gray, and a thin line under the toolbar shows how much of the entry played. This works for each reading of an entry: an agent read-back, a clipboard read, a voicepipe stream, or a replay. When Reduce Motion is on, the highlight and the line change without animation.
+
+| Key | Action |
+|---|---|
+| ↑ and ↓ | Select the previous or next entry. |
+| Space | Play the selected entry. If it plays, stop it. |
+| Return | Play the selected entry from the start. |
+| Delete | Delete the selected entry. |
+| Esc | Stop the current reading. |
+
+You can also double-click a row to play it, or right-click a row to play or delete it.
 
 
 ### Add a local model
@@ -225,11 +247,13 @@ curl \
 
 `speed` must be between `0.5` and `2`.
 
+An agent can send its name in an optional `X-ReadBack-Client` header, for example `X-ReadBack-Client: Cursor`. The History window shows this name as the source of the entry. A name that equals a built-in source, such as `Clipboard`, shows as "Agent · Clipboard".
+
 Clients cannot list, install, remove, load, or select models. A speech request that contains a `model` key returns HTTP 400 with `model_selection_not_allowed`. Change the active model in the ReadBack app.
 
 ## WebSocket protocol
 
-Connect to `ws://127.0.0.1:51280/v1/readback/stream`.
+Connect to `ws://127.0.0.1:51280/v1/readback/stream`. ReadBack saves each stream to History as a voicepipe entry.
 
 Client events:
 
@@ -263,6 +287,7 @@ ReadBack stores app data under:
 | `local-model.json` | One security-scoped local folder registration |
 | `Skills/readback/` | The managed `readback` skill that host skill folders link to |
 | `mcp-clients.json` | Name, version, and last connection time of up to 20 MCP clients |
+| `history.sqlite` | The text of the last 200 read-backs. Only your user account can read this file. |
 
 Model weights and generated app bundles are not tracked by Git.
 
@@ -270,6 +295,9 @@ Model weights and generated app bundles are not tracked by Git.
 ## Privacy and limits
 
 - Text, inference, generated audio, and playback stay on the Mac.
+- ReadBack saves the text that you hear to disk. The file `history.sqlite` keeps the last 200 read-backs from agents, the clipboard, and voicepipe. ReadBack saves no audio.
+- History is always on. You can delete one entry or clear all entries in the History window. Agents and the local service cannot read history, and a local client cannot stop ReadBack from saving its readings.
+- ReadBack overwrites the text of removed entries in `history.sqlite` and in its write-ahead log. This includes entries that you delete or clear and entries that the 200-entry limit removes.
 - The local service, including the MCP server, has no authentication. Do not expose it beyond loopback. It refuses requests from browser pages on other origins, which includes pages on other loopback ports. Its own origin is `http://127.0.0.1:<port>`, and only that exact origin is accepted. Every route also refuses a request if its `Host` is not a loopback address.
 - ReadBack plays one reading and keeps one model loaded at a time.
 - The local model slot supports known runtime profiles, not arbitrary code or repositories.

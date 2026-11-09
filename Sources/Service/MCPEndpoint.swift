@@ -8,6 +8,10 @@ import MCP
 /// only once per server (swift-sdk #144, #219), so a long-lived server would reject
 /// every host reconnect. Also, the stateless transport keys in-flight requests by the
 /// JSON-RPC id that the client chooses, and those ids collide across clients (#265).
+///
+/// The response to `initialize` has an `Mcp-Session-Id` header. Clients send it back on
+/// later requests, so a `play` call can name the client that started the session. The
+/// endpoint keeps no other session state and accepts requests without the header.
 struct MCPEndpoint: Sendable {
     /// 1 MiB holds any text an agent should read aloud, and bounds memory per request.
     static let maximumBodySize = 1 << 20
@@ -54,10 +58,16 @@ struct MCPEndpoint: Sendable {
             path: request.uri.path
         )
 
+        var clientName: String?
+        if let requestSessionID = headers[HTTPHeaderName.sessionID.lowercased()] {
+            clientName = await clients.clientName(sessionID: requestSessionID)
+        }
+        let newSessionID = UUID().uuidString
         let transport = StatelessHTTPServerTransport(validationPipeline: validationPipeline)
-        let server = await makeServer()
+        let server = await makeServer(clientName: clientName)
         try await server.start(transport: transport) { [clients] client, _ in
             await clients.record(clientName: client.name, version: client.version)
+            await clients.remember(clientName: client.name, sessionID: newSessionID)
         }
         let mcpResponse = await transport.handleRequest(mcpRequest)
         await server.stop()
@@ -67,6 +77,9 @@ struct MCPEndpoint: Sendable {
             if let fieldName = HTTPFields.Element.Name(name) {
                 fields[fieldName] = value
             }
+        }
+        if mcpResponse.statusCode == 200, await clients.clientName(sessionID: newSessionID) != nil {
+            fields[HTTPFields.Element.Name(HTTPHeaderName.sessionID)!] = newSessionID
         }
         let responseBody = mcpResponse.bodyData.map {
             ResponseBody(byteBuffer: ByteBuffer(bytes: $0))
@@ -78,7 +91,7 @@ struct MCPEndpoint: Sendable {
         )
     }
 
-    private func makeServer() async -> Server {
+    private func makeServer(clientName: String?) async -> Server {
         let server = Server(
             name: "readback",
             version: serverVersion,
@@ -90,7 +103,7 @@ struct MCPEndpoint: Sendable {
             .init(tools: ReadBackMCPTools.definitions)
         }
         await server.withMethodHandler(CallTool.self) { [tools] parameters in
-            try await tools.call(parameters)
+            try await tools.call(parameters, clientName: clientName)
         }
         return server
     }

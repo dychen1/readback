@@ -1,0 +1,174 @@
+import Foundation
+import ReadBackCore
+
+func historyRecorderTests() -> [TestCase] {
+    [
+        TestCase(name: "history recorder skips blank text") {
+            let file = makeHistoryFileURL()
+            defer { removeHistoryDirectory(of: file) }
+            let recorder = HistoryRecorder(store: HistoryStore(fileURL: file))
+
+            let id = await recorder.record(" \n\t", source: .clipboard)
+
+            let entries = try await recorder.store.entries()
+            try expectEqual(id, nil, "blank text id")
+            try expectEqual(entries, [], "no entry for blank text")
+        },
+        TestCase(name: "history recorder saves the text, source and time of a reading") {
+            let file = makeHistoryFileURL()
+            defer { removeHistoryDirectory(of: file) }
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            let recorder = HistoryRecorder(store: HistoryStore(fileURL: file), now: { now })
+
+            let id = await recorder.record("Read this back.", source: .agent(host: "Codex"))
+
+            let entries = try await recorder.store.entries()
+            try expectEqual(
+                entries,
+                [HistoryEntry(id: id ?? -1, createdAt: now, source: .agent(host: "Codex"), text: "Read this back.")],
+                "recorded entry"
+            )
+        },
+        TestCase(name: "history recorder returns nil instead of failing when the store is unavailable") {
+            let file = try makeUnopenableHistoryFileURL()
+            defer { removeHistoryDirectory(of: file) }
+            let recorder = HistoryRecorder(store: HistoryStore(fileURL: file))
+
+            let id = await recorder.record("Still spoken.", source: .clipboard)
+            var stream = recorder.stream(source: .voicepipe)
+            await stream.append("Also spoken.")
+
+            try expectEqual(id, nil, "unavailable store id")
+        },
+        TestCase(name: "streamed history starts at the first non-blank text and grows until finished") {
+            let file = makeHistoryFileURL()
+            defer { removeHistoryDirectory(of: file) }
+            let recorder = HistoryRecorder(store: HistoryStore(fileURL: file))
+            var stream = recorder.stream(source: .voicepipe)
+
+            await stream.append("  ")
+            let beforeText = try await recorder.store.entries()
+            try expectEqual(beforeText, [], "no entry before real text")
+            await stream.append("First sentence.")
+            let afterStart = try await recorder.store.entries()
+            try expectEqual(
+                afterStart.map(\.text),
+                ["First sentence."],
+                "entry exists as soon as the reading starts"
+            )
+            await stream.append(" Second sentence.")
+            stream.finish()
+            await stream.append(" Sent after input.done.")
+
+            let entries = try await recorder.store.entries()
+            try expectEqual(entries.map(\.text), ["First sentence. Second sentence."], "streamed text")
+            try expectEqual(entries.map(\.source), [.voicepipe], "streamed source")
+        },
+        TestCase(name: "streamed history stops when its entry is deleted") {
+            let file = makeHistoryFileURL()
+            defer { removeHistoryDirectory(of: file) }
+            let recorder = HistoryRecorder(store: HistoryStore(fileURL: file))
+            var stream = recorder.stream(source: .voicepipe)
+
+            await stream.append("One.")
+            let id = try await recorder.store.entries()[0].id
+            try await recorder.store.delete(id: id)
+            await stream.append(" Two.")
+            await stream.append(" Three.")
+
+            let entries = try await recorder.store.entries()
+            try expectEqual(entries, [], "deleted entry stays deleted")
+        },
+        TestCase(name: "only clipboard reads from the app are saved to history") {
+            let file = makeHistoryFileURL()
+            defer { removeHistoryDirectory(of: file) }
+            let recorder = HistoryRecorder(store: HistoryStore(fileURL: file))
+
+            let read = await recorder.entryID(for: .clipboardRead, text: "Copied text.")
+            let preview = await recorder.entryID(for: .voicePreview, text: "test, hello world")
+            let replay = await recorder.entryID(for: .historyReplay(41), text: "Old text.")
+            let restart = await recorder.entryID(for: .settingsRestart(42), text: "Old text.")
+            let restartWithoutEntry = await recorder.entryID(for: .settingsRestart(nil), text: "Preview.")
+
+            let entries = try await recorder.store.entries()
+            try expectEqual(entries.map(\.text), ["Copied text."], "only the clipboard read is saved")
+            try expectEqual(entries.map(\.source), [.clipboard], "clipboard source")
+            try expectEqual(read, entries.first?.id, "clipboard read uses its new entry")
+            try expectEqual(preview, nil, "voice preview has no entry")
+            try expectEqual(replay, 41, "replay uses the entry it repeats")
+            try expectEqual(restart, 42, "restart keeps the entry of the reading")
+            try expectEqual(restartWithoutEntry, nil, "restart of a preview has no entry")
+        },
+        TestCase(name: "a restarted reading keeps its history entry") {
+            try expectEqual(AppSpeechPurpose.clipboardRead.restarted, .clipboardRead, "unsaved clipboard read")
+            try expectEqual(AppSpeechPurpose.voicePreview.restarted, .settingsRestart(nil), "voice preview")
+            try expectEqual(AppSpeechPurpose.historyReplay(5).restarted, .settingsRestart(5), "replay")
+            try expectEqual(AppSpeechPurpose.settingsRestart(5).restarted, .settingsRestart(5), "second restart")
+        },
+        TestCase(name: "history entries do not keep leading whitespace") {
+            let file = makeHistoryFileURL()
+            defer { removeHistoryDirectory(of: file) }
+            let recorder = HistoryRecorder(store: HistoryStore(fileURL: file))
+            var stream = recorder.stream(source: .voicepipe)
+
+            let created = await stream.append("\n  Streamed text.")
+            let appended = await stream.append(" More.")
+
+            let entries = try await recorder.store.entries()
+            try expectEqual(entries.map(\.text), ["Streamed text. More."], "stored text starts at the first word")
+            try expectEqual(created, entries.first?.id, "the first append returns the new entry")
+            try expectEqual(appended, nil, "later appends return nil")
+        },
+        TestCase(name: "history entries keep at most the maximum entry size at a character boundary") {
+            let file = makeHistoryFileURL()
+            defer { removeHistoryDirectory(of: file) }
+            let recorder = HistoryRecorder(store: HistoryStore(fileURL: file))
+            let limit = HistoryRecorder.maximumEntryBytes
+            // "é" has two UTF-8 bytes, so it crosses the limit and must not be split.
+            let filler = String(repeating: "a", count: limit - 1)
+
+            await recorder.record(filler + "é and more", source: .clipboard)
+            var stream = recorder.stream(source: .voicepipe)
+            await stream.append(String(repeating: "b", count: limit - 3))
+            await stream.append("éé")
+            await stream.append(" Sent after the limit.")
+
+            let entries = try await recorder.store.entries()
+            try expectEqual(
+                entries.map(\.text),
+                [String(repeating: "b", count: limit - 3) + "é", filler],
+                "entries end at the last whole character under the limit"
+            )
+        },
+        TestCase(name: "agent host names are cleaned before they are saved") {
+            try expectEqual(HistorySource.agent(reportedHost: nil), .agent(host: nil), "missing host")
+            try expectEqual(HistorySource.agent(reportedHost: "  \n"), .agent(host: nil), "blank host")
+            try expectEqual(
+                HistorySource.agent(reportedHost: "  Claude\u{7} Code\n"),
+                .agent(host: "Claude Code"),
+                "trimmed host without control characters"
+            )
+            try expectEqual(
+                HistorySource.agent(reportedHost: "\u{202E}Cursor\u{200B}\u{2028}"),
+                .agent(host: "Cursor"),
+                "host without bidirectional overrides or invisible characters"
+            )
+            let long = String(repeating: "x", count: 100)
+            try expectEqual(
+                HistorySource.agent(reportedHost: long),
+                .agent(host: String(repeating: "x", count: HistorySource.maximumAgentHostLength)),
+                "length-limited host"
+            )
+            // One character that holds a flood of combining marks.
+            let flood = "a" + String(repeating: "\u{0301}", count: 400_000)
+            guard case .agent(let host?) = HistorySource.agent(reportedHost: flood) else {
+                throw TestFailure(description: "a combining-mark flood should keep a short host")
+            }
+            try expectEqual(
+                host.unicodeScalars.count,
+                HistorySource.maximumAgentHostLength,
+                "the cap counts Unicode scalars, not characters"
+            )
+        },
+    ]
+}

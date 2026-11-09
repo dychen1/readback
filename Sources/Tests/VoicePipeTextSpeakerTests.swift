@@ -13,6 +13,8 @@ private actor StubVoicePipeSessionClient: VoicePipeSessionClient {
         self.failsToConnect = failsToConnect
     }
 
+    var sessionID: String? { failsToConnect ? nil : "stub-session" }
+
     func connect() async throws {
         if failsToConnect {
             throw TestFailure(description: "forced connection failure")
@@ -69,8 +71,64 @@ private final class StubVoicePipeClientFactory: @unchecked Sendable {
     }
 }
 
+private actor RecordingVoicePipeSessionClient: VoicePipeSessionClient {
+    private(set) var appended: [String] = []
+
+    var sessionID: String? { "recorded-session" }
+    func connect() async throws {}
+    func append(_ text: String) async throws { appended.append(text) }
+    func finish() async throws {}
+    func cancel() async {}
+    func pause() async throws {}
+    func resume() async throws {}
+}
+
 func voicePipeTextSpeakerTests() -> [TestCase] {
     [
+        TestCase(name: "voicepipe speaker sends long text in pieces that fit one frame") {
+            let client = RecordingVoicePipeSessionClient()
+            let speaker = VoicePipeTextSpeaker { client }
+            let text = String(repeating: "Long text with é and 👩‍👩‍👧 in it. ", count: 900)
+            let readySession = SessionBox()
+
+            try await speaker.speak(text, requestID: UUID()) { sessionID in
+                await readySession.set(sessionID)
+            }
+
+            let pieces = await client.appended
+            let limit = VoicePipeTextSpeaker.maximumAppendBytes
+            try expect(pieces.count > 1, "long text is split, got \(pieces.count) piece(s)")
+            try expect(pieces.allSatisfy { $0.utf8.count <= limit }, "each piece fits the limit")
+            try expectEqual(pieces.joined(), text, "pieces keep every character in order")
+            try expectEqual(
+                pieces.map(\.count).reduce(0, +),
+                text.count,
+                "every piece boundary is a character boundary"
+            )
+            try expect(
+                pieces.dropLast().allSatisfy { $0.last?.isWhitespace == true },
+                "each piece ends after a space, not inside a word"
+            )
+            let session = await readySession.value
+            try expectEqual(session, "recorded-session", "onReady gets the session ID")
+        },
+        TestCase(name: "voicepipe speaker pieces fall back to character boundaries") {
+            // One character with many combining marks is larger than the limit.
+            let large = "e" + String(repeating: "\u{0301}", count: 10)
+            let limit = 8
+            try expect(large.utf8.count > limit, "the test character is larger than the limit")
+
+            try expectEqual(
+                VoicePipeTextSpeaker.appendPieces(of: "a " + large + " b", maximumBytes: limit),
+                ["a ", large, " b"],
+                "a character larger than the limit goes out alone, above the limit"
+            )
+            try expectEqual(
+                VoicePipeTextSpeaker.appendPieces(of: "abcdefghij", maximumBytes: limit),
+                ["abcdefgh", "ij"],
+                "text without whitespace ends a piece at the limit"
+            )
+        },
         TestCase(name: "stale clipboard cancellation cannot stop a newer request") {
             let oldClient = StubVoicePipeSessionClient()
             let newClient = StubVoicePipeSessionClient()
@@ -80,14 +138,14 @@ func voicePipeTextSpeakerTests() -> [TestCase] {
             let newRequest = UUID()
 
             let oldSpeech = Task {
-                try await speaker.speak("old", requestID: oldRequest) {}
+                try await speaker.speak("old", requestID: oldRequest) { _ in }
             }
             await oldClient.waitUntilFinishStarts()
             await speaker.cancel(requestID: oldRequest)
             try await oldSpeech.value
 
             let newSpeech = Task {
-                try await speaker.speak("new", requestID: newRequest) {}
+                try await speaker.speak("new", requestID: newRequest) { _ in }
             }
             await newClient.waitUntilFinishStarts()
             await speaker.cancel(requestID: oldRequest)
@@ -108,7 +166,7 @@ func voicePipeTextSpeakerTests() -> [TestCase] {
             let speaker = VoicePipeTextSpeaker(clientFactory: { factory.next() })
 
             do {
-                try await speaker.speak("fails", requestID: UUID()) {}
+                try await speaker.speak("fails", requestID: UUID()) { _ in }
                 throw TestFailure(description: "connection should fail")
             } catch let error as TestFailure {
                 try expectEqual(error.description, "forced connection failure", "speech error")
@@ -128,7 +186,7 @@ func voicePipeTextSpeakerTests() -> [TestCase] {
                     try await wait(for: .seconds(10))
                 } catch {
                 }
-                try await speaker.speak("cancelled", requestID: requestID) {}
+                try await speaker.speak("cancelled", requestID: requestID) { _ in }
             }
             speech.cancel()
 
@@ -140,4 +198,9 @@ func voicePipeTextSpeakerTests() -> [TestCase] {
             try expectEqual(factory.callCount(), 0, "client factory calls")
         },
     ]
+}
+
+private actor SessionBox {
+    private(set) var value: String?
+    func set(_ value: String?) { self.value = value }
 }

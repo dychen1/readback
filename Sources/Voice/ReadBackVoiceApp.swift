@@ -47,6 +47,12 @@ struct ReadBackApp: App {
             ModelManagerView(controller: controller)
                 .frame(minWidth: 460, minHeight: 360)
         }
+
+        Window("History", id: "history") {
+            HistoryView(model: controller.historyList, voiceName: controller.selectedVoiceName)
+                .frame(minWidth: 460, minHeight: 360)
+        }
+        .defaultSize(width: 720, height: 520)
     }
 }
 
@@ -135,6 +141,11 @@ struct ReadBackPopover: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 Spacer()
+                Button("History…") {
+                    openWindow(id: "history")
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                }
+                .help("Open the list of recent read-backs")
                 Button {
                     controller.stopReading()
                 } label: {
@@ -383,9 +394,23 @@ final class ServiceController: ObservableObject {
     private let speechSettings: SpeechSettingsStore
     let skillInstaller: ReadBackSkillInstaller
     let mcpClients: MCPClientRegistry
+    let historyRecorder: HistoryRecorder
+    private(set) lazy var historyList = HistoryListModel(
+        store: historyRecorder.store,
+        replay: { [weak self] entry in self?.replayFromHistory(entry) },
+        stop: { [weak self] in self?.stopCurrentReading() }
+    )
+    private(set) lazy var historyPlayback = HistoryPlaybackTracker(
+        list: historyList,
+        coordinator: coordinator,
+        recorder: historyRecorder,
+        activeRequestID: { [weak self] in self?.clipboardRequestID }
+    )
+    /// The purpose to use if a settings change restarts the current clipboard request.
+    private var clipboardRestartPurpose: (requestID: UUID, purpose: AppSpeechPurpose)?
     private var serviceTask: Task<Void, Never>?
     private var clipboardTask: Task<Void, Never>?
-    private var clipboardRequestID: UUID?
+    private(set) var clipboardRequestID: UUID?
     private var pendingClipboardStartID: UUID?
     private var currentClipboardText: String?
     private var hotKey: GlobalHotKey?
@@ -526,7 +551,9 @@ final class ServiceController: ObservableObject {
             storeURL: paths.supportDirectory.appendingPathComponent("mcp-clients.json")
         )
         mcpClients = clients
-        api = ReadBackAPI(
+        let history = HistoryRecorder(store: HistoryStore(fileURL: paths.historyFile))
+        historyRecorder = history
+        let api = ReadBackAPI(
             configuration: configuration,
             modelManager: manager,
             coordinator: coordinator,
@@ -534,14 +561,14 @@ final class ServiceController: ObservableObject {
             mcpClients: clients,
             serverVersion: Bundle.main.object(
                 forInfoDictionaryKey: "CFBundleShortVersionString"
-            ) as? String ?? "dev"
+            ) as? String ?? "dev",
+            history: history
         )
+        self.api = api
         clipboardMonitor = ClipboardChangeMonitor { [coordinator] in
             await coordinator.invalidateReplayCache()
         }
-        let clipboardEndpoint = URL(
-            string: "ws://\(configuration.publicHost):\(configuration.publicPort)/v1/readback/stream"
-        )!
+        let clipboardEndpoint = api.historySkippingStreamURL!
         clipboardSpeaker = VoicePipeTextSpeaker(endpoint: clipboardEndpoint)
         clipboardAction = ClipboardReadBackAction(
             speaker: clipboardSpeaker,
@@ -566,6 +593,11 @@ final class ServiceController: ObservableObject {
         Task { [weak self, coordinator] in
             for await isActive in await coordinator.activityUpdates() {
                 self?.isReading = isActive
+            }
+        }
+        Task { [weak self, coordinator] in
+            for await state in await coordinator.playbackUpdates() {
+                self?.historyPlayback.speechPlaybackDidChange(state)
             }
         }
         Task { [weak self, clients] in
@@ -618,6 +650,7 @@ final class ServiceController: ObservableObject {
         pendingClipboardStartID = nil
         currentClipboardText = nil
         clipboardPlaybackState = .idle
+        historyPlayback.requestDidEnd(nil)
         if let requestID {
             Task { await clipboardSpeaker.cancel(requestID: requestID) }
         }
@@ -722,7 +755,7 @@ final class ServiceController: ObservableObject {
         )
         switch command {
         case .start(let text), .replace(let text):
-            startClipboardSpeech(text)
+            startClipboardSpeech(text, purpose: .clipboardRead)
         case .cancelStarting:
             cancelPendingClipboardSpeech()
         case .pause:
@@ -734,7 +767,9 @@ final class ServiceController: ObservableObject {
 
     func startClipboardSpeech(
         _ text: String,
-        completionStatus: String? = nil
+        purpose: AppSpeechPurpose,
+        completionStatus: String? = nil,
+        onFailure: (@MainActor (any Error) -> Void)? = nil
     ) {
         let previousRequestID = clipboardRequestID
         let requestID = UUID()
@@ -744,6 +779,8 @@ final class ServiceController: ObservableObject {
         currentClipboardText = text
         clipboardPlaybackState = .starting
         status = "Preparing clipboard speech…"
+        clipboardRestartPurpose = (requestID, purpose.restarted)
+        historyPlayback.requestDidStart(requestID, purpose: purpose)
 
         clipboardTask = Task { [weak self] in
             guard let self else {
@@ -764,8 +801,14 @@ final class ServiceController: ObservableObject {
                 try await waitForPublicService()
                 try Task.checkCancellation()
                 guard clipboardRequestID == requestID else { return }
-                try await clipboardSpeaker.speak(text, requestID: requestID) { [weak self] in
+                try await clipboardSpeaker.speak(text, requestID: requestID) { [weak self] sessionID in
                     await self?.clipboardSpeechDidStart(requestID: requestID)
+                    await self?.linkClipboardHistory(
+                        requestID: requestID,
+                        sessionID: sessionID,
+                        purpose: purpose,
+                        text: text
+                    )
                 }
                 guard clipboardRequestID == requestID else {
                     return
@@ -788,6 +831,7 @@ final class ServiceController: ObservableObject {
                         requestID: requestID,
                         status: "The active model is unavailable"
                     )
+                    onFailure?(ServiceControllerError.modelNotInstalled)
                 }
             } catch {
                 if clipboardRequestID == requestID {
@@ -795,12 +839,13 @@ final class ServiceController: ObservableObject {
                         requestID: requestID,
                         status: "Clipboard read-back failed: \(error.localizedDescription)"
                     )
+                    onFailure?(error)
                 }
             }
         }
     }
 
-    private func cancelPendingClipboardSpeech() {
+    func cancelPendingClipboardSpeech() {
         guard let requestID = clipboardRequestID else { return }
         clipboardTask?.cancel()
         pendingClipboardStartID = nil
@@ -867,8 +912,29 @@ final class ServiceController: ObservableObject {
         clipboardRequestID = nil
         pendingClipboardStartID = nil
         currentClipboardText = nil
+        clipboardRestartPurpose = nil
         clipboardPlaybackState = .idle
         self.status = status
+        historyPlayback.requestDidEnd(requestID)
+    }
+
+    /// Connects the clipboard request to its history entry. A clipboard read becomes a new
+    /// entry here, as its reading starts.
+    private func linkClipboardHistory(
+        requestID: UUID,
+        sessionID: String?,
+        purpose: AppSpeechPurpose,
+        text: String
+    ) async {
+        guard let entryID = await historyPlayback.linkEntry(
+            requestID: requestID,
+            sessionID: sessionID,
+            purpose: purpose,
+            text: text
+        ) else { return }
+        if clipboardRestartPurpose?.requestID == requestID {
+            clipboardRestartPurpose = (requestID, .settingsRestart(entryID))
+        }
     }
 
     private func saveSpeechConfiguration(status successStatus: String) {
@@ -886,7 +952,10 @@ final class ServiceController: ObservableObject {
             guard let self else { return }
             await speechSettings.update(SpeechSettings(configuration: configuration))
             if let activeText, currentClipboardText == activeText {
-                startClipboardSpeech(activeText)
+                let purpose = clipboardRestartPurpose.flatMap {
+                    $0.requestID == clipboardRequestID ? $0.purpose : nil
+                }
+                startClipboardSpeech(activeText, purpose: purpose ?? .settingsRestart(nil))
             }
         }
     }

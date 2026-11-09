@@ -87,6 +87,8 @@ public actor VoicePipeClient {
     private var receiverTerminated = false
     private var serverError: String?
     private var endReason: ReadBackServerEvent.EndReason?
+    /// The server's ID for this reading. It is `nil` until `connect()` returns.
+    public private(set) var sessionID: String?
 
     public init(
         endpoint: URL,
@@ -199,6 +201,7 @@ public actor VoicePipeClient {
                 let event = try decoder.decode(ReadBackServerEvent.self, from: Data(text.utf8))
                 switch event.type {
                 case .sessionReady:
+                    sessionID = event.sessionID
                     isReady = true
                     resume(&readyWaiters)
                 case .sessionFinished:
