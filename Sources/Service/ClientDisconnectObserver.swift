@@ -9,6 +9,10 @@ final class ClientDisconnectSignal: @unchecked Sendable {
     private var left = false
     private var action: (@Sendable () -> Void)?
 
+    var hasLeft: Bool {
+        lock.withLock { left }
+    }
+
     func clientLeft() {
         let pending = lock.withLock { () -> (@Sendable () -> Void)? in
             guard !left else { return nil }

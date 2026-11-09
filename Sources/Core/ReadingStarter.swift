@@ -21,6 +21,8 @@ public enum ReadingStartError: Error, Equatable, Sendable {
     case invalidVoice(String)
     case invalidLanguage(String)
     case modelUnavailable(String)
+    /// The caller went away before the reading started.
+    case abandoned
 
     public static let speedRange = PlaybackRate.minimum...PlaybackRate.maximum
 
@@ -43,6 +45,8 @@ public enum ReadingStartError: Error, Equatable, Sendable {
             "The active model has no language \"\(language)\"."
         case .modelUnavailable(let reason):
             reason
+        case .abandoned:
+            "The client left before the reading started."
         }
     }
 }
@@ -67,7 +71,12 @@ public struct ReadingStarter: Sendable {
     /// Starts `request` and returns its session ID once it is the current reading.
     /// Its text keeps queuing in the background, so this returns before playback
     /// finishes. Throws `ReadingStartError` before touching the current reading.
-    public func start(_ request: ReadingRequest) async throws(ReadingStartError) -> String {
+    /// `isAbandoned` is checked just before the current reading is replaced, so a caller
+    /// that left during validation interrupts nothing.
+    public func start(
+        _ request: ReadingRequest,
+        isAbandoned: @Sendable () -> Bool = { false }
+    ) async throws(ReadingStartError) -> String {
         let text = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { throw .emptyText }
         if let speed = request.speed, !ReadingStartError.speedRange.contains(speed) {
@@ -101,6 +110,7 @@ public struct ReadingStarter: Sendable {
             throw .modelUnavailable(Self.notReadyMessage)
         }
 
+        guard !isAbandoned() else { throw .abandoned }
         let id = UUID().uuidString
         do {
             try await coordinator.replaceSession(id: id) { _ in }

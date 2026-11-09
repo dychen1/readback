@@ -179,7 +179,8 @@ public final class ReadBackAPI: @unchecked Sendable {
                         voice: publicRequest.voice,
                         languageCode: publicRequest.languageCode,
                         speed: publicRequest.speed
-                    )
+                    ),
+                    isAbandoned: { disconnect.hasLeft }
                 )
             } catch let error as ServiceError {
                 return errorResponse(error)
@@ -391,6 +392,7 @@ public final class ReadBackAPI: @unchecked Sendable {
         case .invalidVoice: "invalid_voice"
         case .invalidLanguage: "invalid_language"
         case .modelUnavailable: "model_not_ready"
+        case .abandoned: "client_left"
         }
         return ServiceError(
             status: error.isInvalidRequest ? .badRequest : .serviceUnavailable,

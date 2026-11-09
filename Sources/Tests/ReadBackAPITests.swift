@@ -149,6 +149,28 @@ private struct ErrorBody: Decodable {
 
 func readBackAPITests() -> [TestCase] {
     [
+        TestCase(name: "a reading whose caller left during validation interrupts nothing") {
+            let manager = APITestModelManager()
+            let coordinator = SpeechCoordinator(synthesizer: manager, player: APIAudioPlayer(blocking: true))
+            try await coordinator.replaceSession(id: "current") { _ in }
+            let reader = ReadingStarter(
+                coordinator: coordinator,
+                modelManager: manager,
+                speechSettings: SpeechSettingsStore(
+                    configuration: AppConfiguration.default(modelDirectory: URL(fileURLWithPath: "/tmp"))
+                )
+            )
+            var startError: ReadingStartError?
+            do {
+                _ = try await reader.start(ReadingRequest(text: "Too late."), isAbandoned: { true })
+            } catch {
+                startError = error as? ReadingStartError
+            }
+            try expectEqual(startError, .abandoned, "start reports the caller left")
+            let current = await coordinator.currentSessionID
+            try expectEqual(current, "current", "the current reading keeps playing")
+            await coordinator.stop()
+        },
         TestCase(name: "public model management routes do not exist") {
             let fixture = APIFixture()
             let app = Application(responder: fixture.api.makeRouter().buildResponder())
