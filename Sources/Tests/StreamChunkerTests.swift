@@ -98,7 +98,7 @@ func streamChunkerTests() -> [TestCase] {
 
             try expectEqual(
                 chunks,
-                [StreamedTextChunk(text: "A. B.", endsParagraph: true)],
+                [StreamedTextChunk(text: "A. B.", endsParagraph: true, sourceRange: 0..<5)],
                 "the sentence chunk ends the paragraph"
             )
         },
