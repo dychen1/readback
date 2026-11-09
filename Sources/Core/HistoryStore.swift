@@ -47,11 +47,17 @@ public enum HistoryStoreError: Error, Equatable, LocalizedError {
 /// the next call. A damaged or unreadable file stops history but does not stop speech.
 public actor HistoryStore {
     public static let defaultMaximumEntries = 200
+    /// Pruning runs on every save once history is full. A TRUNCATE checkpoint waits up to the
+    /// busy timeout for other readers, so the store runs it only after this many prunes.
+    /// Pruned text then stays in the WAL for at most 20 more saves, while at most one save
+    /// in 20 can wait for a reader.
+    public static let prunesPerCheckpoint = 20
     static let schemaVersion: Int32 = 1
 
     public nonisolated let fileURL: URL
     public nonisolated let maximumEntries: Int
     private var connection: Connection?
+    private var prunesSinceCheckpoint = 0
     private var changeContinuations: [UUID: AsyncStream<Void>.Continuation] = [:]
 
     public init(fileURL: URL, maximumEntries: Int = defaultMaximumEntries) {
@@ -82,7 +88,13 @@ public actor HistoryStore {
             return (id, sqlite3_changes(db) > 0)
         }
         if prunedOldEntries {
-            checkpoint(db)
+            // Trade-off: secure_delete clears the pruned text in the new page versions, but
+            // older versions can stay in the WAL and database files until the next TRUNCATE
+            // checkpoint. An explicit delete or clear checkpoints at once.
+            prunesSinceCheckpoint += 1
+            if prunesSinceCheckpoint >= Self.prunesPerCheckpoint {
+                checkpoint(db)
+            }
         }
         notifyChanged()
         return id
@@ -349,6 +361,7 @@ public actor HistoryStore {
     }
 
     private func checkpoint(_ db: OpaquePointer) {
+        prunesSinceCheckpoint = 0
         // Without this checkpoint, deleted text stays in the WAL file until SQLite runs its
         // next automatic checkpoint. If the checkpoint fails, the delete is still complete.
         try? run(db, "PRAGMA wal_checkpoint(TRUNCATE)", operation: "checkpoint history")

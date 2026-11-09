@@ -104,13 +104,15 @@ func historyStoreTests() -> [TestCase] {
             let entries = try await store.entries()
             try expectEqual(entries.map(\.text), ["Entry 5", "Entry 4", "Entry 3"], "pruned entries")
         },
-        TestCase(name: "history store leaves no text of pruned entries on disk") {
+        TestCase(name: "history store removes the text of pruned entries from disk within a checkpoint interval") {
             let file = makeHistoryFileURL()
             defer { removeHistoryDirectory(of: file) }
             let store = HistoryStore(fileURL: file, maximumEntries: 1)
 
             try await store.insert("PRUNED-SECRET-TEXT", source: .clipboard, at: Date())
-            try await store.insert("Kept entry", source: .clipboard, at: Date())
+            for number in 1...HistoryStore.prunesPerCheckpoint {
+                try await store.insert("Kept entry \(number)", source: .clipboard, at: Date())
+            }
 
             let marker = Data("PRUNED-SECRET-TEXT".utf8)
             for suffix in ["", "-wal"] {

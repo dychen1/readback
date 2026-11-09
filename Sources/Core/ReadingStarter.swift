@@ -122,12 +122,14 @@ public struct ReadingStarter: Sendable {
         } catch {
             throw .modelUnavailable(Self.switchingMessage)
         }
-        if let history, let historySource,
-           let entryID = await history.record(text, source: historySource)
-        {
-            await coordinator.linkHistoryEntry(entryID, toSession: id)
-        }
-        Task { [coordinator] in
+        Task { [coordinator, history] in
+            // The history write runs here, not before `start` returns. The link does nothing
+            // if the reading already ended.
+            if let history, let historySource,
+               let entryID = await history.record(text, source: historySource)
+            {
+                await coordinator.linkHistoryEntry(entryID, toSession: id)
+            }
             var chunker = StreamingTextChunker()
             let chunks = chunker.append(text) + (chunker.flush().map { [$0] } ?? [])
             do {
