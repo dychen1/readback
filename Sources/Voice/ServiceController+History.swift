@@ -22,22 +22,7 @@ extension ServiceController {
         if clipboardPlaybackState == .starting {
             cancelPendingClipboardSpeech()
         }
-        pendingHistoryPlayback = nil
-        refreshHistoryPlayback()
+        historyPlayback.requestDidEnd(nil)
         stopReading()
-    }
-
-    /// Sends the playback state of the current reading to the History window. Any reading
-    /// that has a history entry shows there: agent read-backs, clipboard reads, voicepipe
-    /// streams and replays.
-    func refreshHistoryPlayback() {
-        if let pending = pendingHistoryPlayback {
-            if clipboardRequestID == pending.requestID {
-                historyList.playbackDidChange(HistoryPlayback(entryID: pending.entryID, phase: .starting))
-                return
-            }
-            pendingHistoryPlayback = nil
-        }
-        historyList.playbackDidChange(HistoryPlayback(speechPlayback))
     }
 }

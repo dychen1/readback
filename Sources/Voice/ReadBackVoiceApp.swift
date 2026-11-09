@@ -400,12 +400,14 @@ final class ServiceController: ObservableObject {
         replay: { [weak self] entry in self?.replayFromHistory(entry) },
         stop: { [weak self] in self?.stopCurrentReading() }
     )
-    /// A replay or restart of a history entry, from its start until its reading has a
-    /// session. The History window shows the entry as starting in that time.
-    var pendingHistoryPlayback: (requestID: UUID, entryID: HistoryEntry.ID)?
+    private(set) lazy var historyPlayback = HistoryPlaybackTracker(
+        list: historyList,
+        coordinator: coordinator,
+        recorder: historyRecorder,
+        activeRequestID: { [weak self] in self?.clipboardRequestID }
+    )
     /// The purpose to use if a settings change restarts the current clipboard request.
     private var clipboardRestartPurpose: (requestID: UUID, purpose: AppSpeechPurpose)?
-    var speechPlayback: SpeechPlaybackState?
     private var serviceTask: Task<Void, Never>?
     private var clipboardTask: Task<Void, Never>?
     private(set) var clipboardRequestID: UUID?
@@ -595,8 +597,7 @@ final class ServiceController: ObservableObject {
         }
         Task { [weak self, coordinator] in
             for await state in await coordinator.playbackUpdates() {
-                self?.speechPlayback = state
-                self?.refreshHistoryPlayback()
+                self?.historyPlayback.speechPlaybackDidChange(state)
             }
         }
         Task { [weak self, clients] in
@@ -649,8 +650,7 @@ final class ServiceController: ObservableObject {
         pendingClipboardStartID = nil
         currentClipboardText = nil
         clipboardPlaybackState = .idle
-        pendingHistoryPlayback = nil
-        refreshHistoryPlayback()
+        historyPlayback.requestDidEnd(nil)
         if let requestID {
             Task { await clipboardSpeaker.cancel(requestID: requestID) }
         }
@@ -780,13 +780,7 @@ final class ServiceController: ObservableObject {
         clipboardPlaybackState = .starting
         status = "Preparing clipboard speech…"
         clipboardRestartPurpose = (requestID, purpose.restarted)
-        switch purpose {
-        case .historyReplay(let entryID), .settingsRestart(let entryID?):
-            pendingHistoryPlayback = (requestID, entryID)
-        case .clipboardRead, .voicePreview, .settingsRestart(nil):
-            pendingHistoryPlayback = nil
-        }
-        refreshHistoryPlayback()
+        historyPlayback.requestDidStart(requestID, purpose: purpose)
 
         clipboardTask = Task { [weak self] in
             guard let self else {
@@ -921,10 +915,7 @@ final class ServiceController: ObservableObject {
         clipboardRestartPurpose = nil
         clipboardPlaybackState = .idle
         self.status = status
-        if pendingHistoryPlayback?.requestID == requestID {
-            pendingHistoryPlayback = nil
-            refreshHistoryPlayback()
-        }
+        historyPlayback.requestDidEnd(requestID)
     }
 
     /// Connects the clipboard request to its history entry. A clipboard read becomes a new
@@ -935,16 +926,14 @@ final class ServiceController: ObservableObject {
         purpose: AppSpeechPurpose,
         text: String
     ) async {
-        guard let entryID = await historyRecorder.entryID(for: purpose, text: text) else { return }
-        if let sessionID {
-            await coordinator.linkHistoryEntry(entryID, toSession: sessionID)
-        }
+        guard let entryID = await historyPlayback.linkEntry(
+            requestID: requestID,
+            sessionID: sessionID,
+            purpose: purpose,
+            text: text
+        ) else { return }
         if clipboardRestartPurpose?.requestID == requestID {
             clipboardRestartPurpose = (requestID, .settingsRestart(entryID))
-        }
-        if pendingHistoryPlayback?.requestID == requestID {
-            pendingHistoryPlayback = nil
-            refreshHistoryPlayback()
         }
     }
 

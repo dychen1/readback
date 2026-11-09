@@ -629,7 +629,7 @@ private actor EventRecorder {
     }
 }
 
-private actor RecordingSynthesizer: SpeechSynthesizing {
+actor RecordingSynthesizer: SpeechSynthesizing {
     private let delayNanoseconds: UInt64
     private var recordedInputs: [String] = []
     private var concurrentCalls = 0
@@ -748,7 +748,7 @@ private actor BlockingSynthesizer: SpeechSynthesizing {
     }
 }
 
-private actor RecordingAudioPlayer: AudioPlaying {
+actor RecordingAudioPlayer: AudioPlaying {
     private var plays = 0
     private var stops = 0
 
