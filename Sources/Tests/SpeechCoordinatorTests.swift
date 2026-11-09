@@ -124,6 +124,32 @@ func speechCoordinatorTests() -> [TestCase] {
             let afterStop = await coordinator.currentPlaybackState
             try expectEqual(afterStop, nil, "stop clears the state")
         },
+        TestCase(name: "speech coordinator shows no audio while a stream waits for more text") {
+            let coordinator = SpeechCoordinator(synthesizer: RecordingSynthesizer(), player: RecordingAudioPlayer())
+            try await coordinator.replaceSession(id: "stream") { _ in }
+            _ = try await coordinator.enqueue(
+                sessionID: "stream",
+                text: "Hello",
+                voice: nil,
+                speed: 1,
+                sourceRange: 0..<5
+            )
+
+            var state = await coordinator.currentPlaybackState
+            for _ in 0..<200 where state?.chunkRange == nil || state?.phase != .starting {
+                try await wait(for: .milliseconds(5))
+                state = await coordinator.currentPlaybackState
+            }
+            try expectEqual(
+                state,
+                SpeechPlaybackState(sessionID: "stream", phase: .starting, chunkRange: 0..<5),
+                "the played chunk stays, but the phase shows that no audio plays"
+            )
+            await coordinator.pause(sessionID: "stream")
+            await coordinator.resume(sessionID: "stream")
+            let resumed = await coordinator.currentPlaybackState?.phase
+            try expectEqual(resumed, .starting, "resume while waiting still shows no audio")
+        },
         TestCase(name: "speech coordinator replacing a session interrupts the current reading") {
             let player = PausableAudioPlayer()
             let gate = ReadBackActivityGate()

@@ -38,7 +38,8 @@ public enum SpeechSessionOutcome: Equatable, Sendable {
 /// window. It is not part of the stream protocol.
 public struct SpeechPlaybackState: Equatable, Sendable {
     public enum Phase: Equatable, Sendable {
-        /// The session started, but no chunk plays yet.
+        /// No audio plays: the session started but no chunk plays yet, or a stream waits for
+        /// more text.
         case starting
         case playing
         case paused
@@ -367,7 +368,7 @@ public actor SpeechCoordinator {
         guard sessionID == expectedSessionID, let eventSink, playbackPaused else { return }
         let generation = sessionGeneration
         playbackPaused = false
-        playbackState?.phase = playbackState?.chunkRange == nil ? .starting : .playing
+        playbackState?.phase = playbackState?.chunkRange == nil || worker == nil ? .starting : .playing
         await player.resume()
         guard sessionID == expectedSessionID,
               sessionGeneration == generation,
@@ -544,6 +545,9 @@ public actor SpeechCoordinator {
                 worker = nil
                 if inputFinished {
                     await completeSession(id: expectedSessionID)
+                } else {
+                    // The stream waits for more text, so no audio plays.
+                    playbackState?.phase = .starting
                 }
                 return
             }
