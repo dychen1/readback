@@ -269,6 +269,24 @@ func readBackWebSocketTests() -> [TestCase] {
             }
             await fixture.coordinator.stop()
         },
+        TestCase(name: "routes refuse a non-loopback host, as a DNS-rebinding page sends") {
+            let fixture = LiveFixture()
+            _ = try await fixture.app.test(.live) { client in
+                let port = try client.port.unwrap("live test port")
+                for host in ["evil.example:\(port)", "127.0.0.1.evil.example"] {
+                    let status = try await rawHTTPStatus(
+                        port: port,
+                        request: "GET /health HTTP/1.1\r\nHost: \(host)\r\nConnection: close\r\n\r\n"
+                    )
+                    try expectEqual(status, 403, "health status for Host \(host)")
+                }
+                let own = try await rawHTTPStatus(
+                    port: port,
+                    request: "GET /health HTTP/1.1\r\nHost: 127.0.0.1:\(port)\r\nConnection: close\r\n\r\n"
+                )
+                try expectEqual(own, 200, "health answers its own host")
+            }
+        },
         TestCase(name: "stream upgrade accepts only its own loopback origin") {
             let fixture = LiveFixture()
             _ = try await fixture.app.test(.live) { client in
@@ -282,7 +300,7 @@ func readBackWebSocketTests() -> [TestCase] {
                             + "Origin: \(origin)\r\n\r\n"
                     )
                 }
-                for origin in ["http://127.0.0.1:5173", "https://evil.example"] {
+                for origin in ["http://127.0.0.1:5173", "https://evil.example", "http://localhost:51280"] {
                     let status = try await upgradeStatus(origin: origin)
                     try expect(status != 101, "\(origin) must not upgrade, got \(status)")
                 }

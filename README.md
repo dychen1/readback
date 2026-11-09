@@ -270,7 +270,7 @@ Model weights and generated app bundles are not tracked by Git.
 ## Privacy and limits
 
 - Text, inference, generated audio, and playback stay on the Mac.
-- The local service, including the MCP server, has no authentication. Do not expose it beyond loopback. It refuses requests from browser pages on other origins, which includes pages on other loopback ports. Its own origin is `http://127.0.0.1:<port>`. The MCP server also refuses a request if its `Host` is not a loopback address.
+- The local service, including the MCP server, has no authentication. Do not expose it beyond loopback. It refuses requests from browser pages on other origins, which includes pages on other loopback ports. Its own origin is `http://127.0.0.1:<port>`, and only that exact origin is accepted. Every route also refuses a request if its `Host` is not a loopback address.
 - ReadBack plays one reading and keeps one model loaded at a time.
 - The local model slot supports known runtime profiles, not arbitrary code or repositories.
 - The app has no automatic updater yet.

@@ -16,16 +16,17 @@ struct MCPEndpoint: Sendable {
     let serverVersion: String
     private let validationPipeline: StandardValidationPipeline
 
-    /// - Parameter port: ReadBack's configured port. Browser origins must name it, so a
-    ///   page served from another loopback port (a dev server, say) cannot call the tools.
-    init(tools: ReadBackMCPTools, clients: MCPClientRegistry, serverVersion: String, port: Int) {
+    /// - Parameter origin: ReadBack's own origin, `http://<host>:<port>`. It is the only
+    ///   browser origin allowed, so a page served from another loopback port or name (a
+    ///   dev server, say) cannot call the tools.
+    init(tools: ReadBackMCPTools, clients: MCPClientRegistry, serverVersion: String, origin: String) {
         self.tools = tools
         self.clients = clients
         self.serverVersion = serverVersion
         validationPipeline = StandardValidationPipeline(validators: [
             OriginValidator(
                 allowedHosts: OriginValidator.localhost().allowedHosts,
-                allowedOrigins: OriginValidator.localhost(port: port).allowedOrigins
+                allowedOrigins: [origin]
             ),
             AcceptHeaderValidator(mode: .jsonOnly),
             ContentTypeValidator(),

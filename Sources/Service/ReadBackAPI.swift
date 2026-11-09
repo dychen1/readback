@@ -106,24 +106,27 @@ public final class ReadBackAPI: @unchecked Sendable {
             tools: ReadBackMCPTools(reader: reader, coordinator: coordinator),
             clients: mcpClients,
             serverVersion: serverVersion,
-            port: configuration.publicPort
+            origin: "http://\(configuration.publicHost):\(configuration.publicPort)"
         )
     }
 
     public func makeRouter() -> Router<ReadBackRequestContext> {
         let router = Router(context: ReadBackRequestContext.self)
 
-        router.get("/health") { [self] _, _ -> HealthResponse in
+        router.get("/health") { [self] request, _ -> Response in
+            guard isOriginAllowed(request) else { return originRejectedResponse() }
             let snapshot = await modelManager.snapshot()
             let runtime = Self.runtimeName(snapshot.runtimeState)
             let installed = snapshot.activeModelID.flatMap { activeID in
                 snapshot.models.first { $0.id == activeID }
             }.map { Self.isInstalled($0.storageState) } ?? false
-            return HealthResponse(
-                status: runtime == "ready" ? "ok" : runtime,
-                runtime: runtime,
-                activeModel: snapshot.activeModelID?.rawValue,
-                modelInstalled: installed
+            return jsonResponse(
+                HealthResponse(
+                    status: runtime == "ready" ? "ok" : runtime,
+                    runtime: runtime,
+                    activeModel: snapshot.activeModelID?.rawValue,
+                    modelInstalled: installed
+                )
             )
         }
 
@@ -406,16 +409,21 @@ public final class ReadBackAPI: @unchecked Sendable {
         // send an Origin header, so a missing header is always allowed. Some WebSocket
         // client libraries, such as the vendored swift-websocket in tests, send their
         // own `ws://` URL without a port. Browsers never send a `ws` origin. A browser
-        // origin must be this service itself. The check refuses any other page, even
-        // one from another loopback port such as a dev server.
+        // origin must be exactly the address this service listens on. The check refuses
+        // any other page, even one from another loopback port or name such as a dev
+        // server on `localhost`.
+        // A DNS-rebinding page sends its own name as `Host`, so a non-loopback `Host`
+        // is refused too. Hummingbird's test client sends `localhost` with no port.
+        if let authority = request.head.authority {
+            guard let host = URLComponents(string: "http://\(authority)")?.host,
+                  Self.isLoopbackHost(host)
+            else { return false }
+        }
         guard let origin = request.headers[.origin] else { return true }
-        guard let url = URL(string: origin),
-              let host = url.host,
-              Self.isLoopbackHost(host)
-        else { return false }
+        guard let url = URL(string: origin), let host = url.host else { return false }
         switch url.scheme {
-        case "ws", "wss": return true
-        case "http", "https": return url.port == configuration.publicPort
+        case "ws", "wss": return Self.isLoopbackHost(host)
+        case "http": return host == configuration.publicHost && url.port == configuration.publicPort
         default: return false
         }
     }
@@ -429,7 +437,7 @@ public final class ReadBackAPI: @unchecked Sendable {
             ServiceError(
                 status: .forbidden,
                 code: "origin_not_allowed",
-                message: "ReadBack accepts browser requests only from its own origin."
+                message: "ReadBack accepts browser requests only from its own origin and address."
             )
         )
     }

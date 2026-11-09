@@ -258,7 +258,10 @@ func readBackAPITests() -> [TestCase] {
         },
         TestCase(name: "play accepts only its own loopback origin") {
             let fixture = APIFixture()
-            for origin in ["http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1", "null"] {
+            for origin in [
+                "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1", "null",
+                "http://localhost:51280", "http://[::1]:51280", "https://127.0.0.1:51280",
+            ] {
                 try await fixture.play(#"{"input":"hello"}"#, origin: origin) { status, error in
                     try expectEqual(status, 403, "play status for \(origin)")
                     try expectEqual(error?.code, "origin_not_allowed", "error code for \(origin)")
@@ -267,7 +270,7 @@ func readBackAPITests() -> [TestCase] {
             let rejectedPlays = await fixture.player.playCount()
             try expectEqual(rejectedPlays, 0, "rejected origins play nothing")
 
-            for origin in ["http://127.0.0.1:51280", "http://localhost:51280", "http://[::1]:51280"] {
+            for origin in ["http://127.0.0.1:51280"] {
                 try await fixture.play(#"{"input":"hello"}"#, origin: origin) { status, _ in
                     try expectEqual(status, 200, "play status for \(origin)")
                 }
