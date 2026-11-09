@@ -10,12 +10,12 @@ func streamChunkerTests() -> [TestCase] {
 
             try expectEqual(
                 chunks,
-                [StreamedTextChunk(text: "First sentence.", endsParagraph: false)],
+                [StreamedTextChunk(text: "First sentence.", endsParagraph: false, sourceRange: 0..<15)],
                 "sentence chunks"
             )
             try expectEqual(
                 chunker.flush(),
-                StreamedTextChunk(text: "Second", endsParagraph: false),
+                StreamedTextChunk(text: "Second", endsParagraph: false, sourceRange: 16..<22),
                 "retained remainder"
             )
         },
@@ -29,7 +29,8 @@ func streamChunkerTests() -> [TestCase] {
                 [
                     StreamedTextChunk(
                         text: "First sentence. Second sentence.",
-                        endsParagraph: false
+                        endsParagraph: false,
+                        sourceRange: 0..<32
                     )
                 ],
                 "coalesced sentence chunk"
@@ -42,12 +43,12 @@ func streamChunkerTests() -> [TestCase] {
 
             try expectEqual(
                 chunks,
-                [StreamedTextChunk(text: "First paragraph", endsParagraph: true)],
+                [StreamedTextChunk(text: "First paragraph", endsParagraph: true, sourceRange: 0..<15)],
                 "paragraph chunks"
             )
             try expectEqual(
                 chunker.flush(),
-                StreamedTextChunk(text: "Next paragraph", endsParagraph: false),
+                StreamedTextChunk(text: "Next paragraph", endsParagraph: false, sourceRange: 17..<31),
                 "paragraph remainder"
             )
         },
@@ -58,7 +59,7 @@ func streamChunkerTests() -> [TestCase] {
 
             try expectEqual(
                 chunks,
-                [StreamedTextChunk(text: "First paragraph.", endsParagraph: true)],
+                [StreamedTextChunk(text: "First paragraph.", endsParagraph: true, sourceRange: 0..<16)],
                 "punctuated paragraph chunk"
             )
         },
@@ -118,7 +119,7 @@ func streamChunkerTests() -> [TestCase] {
 
             try expectEqual(
                 chunker.flush(),
-                StreamedTextChunk(text: "No punctuation yet", endsParagraph: false),
+                StreamedTextChunk(text: "No punctuation yet", endsParagraph: false, sourceRange: 0..<18),
                 "idle flush"
             )
             try expectEqual(chunker.flush(), nil, "second flush must be empty")
@@ -134,9 +135,40 @@ func streamChunkerTests() -> [TestCase] {
             try expectEqual(chunks.first?.endsParagraph, false, "hard split paragraph marker")
             try expectEqual(
                 chunker.flush(),
-                StreamedTextChunk(text: "🙂", endsParagraph: false),
+                StreamedTextChunk(text: "🙂", endsParagraph: false, sourceRange: 250..<251),
                 "Unicode remainder"
             )
+        },
+        TestCase(name: "chunker ranges point at each chunk in the received text") {
+            let text = "  \n\nCafe\u{301} au lait. 👩‍👩‍👧 Family time!\n\n"
+                + "これは長い段落です。Second   paragraph with   spaces.\n\n\n"
+                + String(repeating: "word ", count: 80) + "end"
+            let characters = Array(text)
+            for pieceLength in [1, 3, 7, 40, characters.count] {
+                var chunker = StreamingTextChunker(maxCharacters: 60)
+                var chunks: [StreamedTextChunk] = []
+                for start in stride(from: 0, to: characters.count, by: pieceLength) {
+                    let end = min(start + pieceLength, characters.count)
+                    chunks += chunker.append(String(characters[start..<end]))
+                }
+                chunks += chunker.flush().map { [$0] } ?? []
+
+                let spoken = Array(text.drop(while: \.isWhitespace))
+                var previousEnd = 0
+                for chunk in chunks {
+                    guard let range = chunk.sourceRange else {
+                        throw TestFailure(description: "chunk \"\(chunk.text)\" has no range")
+                    }
+                    try expect(range.lowerBound >= previousEnd, "ranges keep their order (piece \(pieceLength))")
+                    try expectEqual(
+                        String(spoken[range]),
+                        chunk.text,
+                        "range text for piece length \(pieceLength)"
+                    )
+                    previousEnd = range.upperBound
+                }
+                try expectEqual(previousEnd, spoken.count, "last range ends at the last character")
+            }
         },
     ]
 }

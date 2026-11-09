@@ -34,6 +34,38 @@ public enum SpeechSessionOutcome: Equatable, Sendable {
     }
 }
 
+/// What the current reading plays now. The app uses it to show playback in the History
+/// window. It is not part of the stream protocol.
+public struct SpeechPlaybackState: Equatable, Sendable {
+    public enum Phase: Equatable, Sendable {
+        /// The session started, but no chunk plays yet.
+        case starting
+        case playing
+        case paused
+    }
+
+    public let sessionID: String
+    /// The history entry of this reading, if it has one.
+    public internal(set) var historyEntryID: Int64?
+    public internal(set) var phase: Phase
+    /// The chunk that plays now, as character offsets into the text of the reading. Offsets
+    /// start at the first character that is not whitespace. The value is `nil` until the
+    /// first chunk starts, and it keeps the last chunk during pauses and between chunks.
+    public internal(set) var chunkRange: Range<Int>?
+
+    public init(
+        sessionID: String,
+        historyEntryID: Int64? = nil,
+        phase: Phase = .starting,
+        chunkRange: Range<Int>? = nil
+    ) {
+        self.sessionID = sessionID
+        self.historyEntryID = historyEntryID
+        self.phase = phase
+        self.chunkRange = chunkRange
+    }
+}
+
 /// Owns the single current reading. Every operation that targets a reading names its
 /// session, so a client whose reading was replaced cannot affect the newer one.
 public actor SpeechCoordinator {
@@ -46,6 +78,7 @@ public actor SpeechCoordinator {
         let languageCode: String?
         let speed: Double
         let pauseBefore: Double
+        let sourceRange: Range<Int>?
     }
 
     private struct EndedSession: Sendable {
@@ -81,6 +114,13 @@ public actor SpeechCoordinator {
     private var pauseWaiters: [CheckedContinuation<Void, Never>] = []
     private var transitionTail: Task<Void, Never>?
     private var activityContinuations: [UUID: AsyncStream<Bool>.Continuation] = [:]
+    private var playbackContinuations: [UUID: AsyncStream<SpeechPlaybackState?>.Continuation] = [:]
+    private var playbackState: SpeechPlaybackState? {
+        didSet {
+            guard playbackState != oldValue else { return }
+            playbackContinuations.values.forEach { $0.yield(playbackState) }
+        }
+    }
     private var replayCache: SpeechReplayCache
     private var replayRecordingID: UUID?
 
@@ -125,6 +165,32 @@ public actor SpeechCoordinator {
         return stream
     }
 
+    public var currentPlaybackState: SpeechPlaybackState? {
+        playbackState
+    }
+
+    /// Yields what the current reading plays, starting with the current state. It yields
+    /// `nil` while nothing plays. A slow reader gets only the newest state.
+    public func playbackUpdates() -> AsyncStream<SpeechPlaybackState?> {
+        let id = UUID()
+        let (stream, continuation) = AsyncStream<SpeechPlaybackState?>.makeStream(
+            bufferingPolicy: .bufferingNewest(1)
+        )
+        playbackContinuations[id] = continuation
+        continuation.yield(playbackState)
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.removePlaybackContinuation(id) }
+        }
+        return stream
+    }
+
+    /// Connects the history entry `entryID` to `sessionID`, so playback updates name the
+    /// entry. Does nothing if `sessionID` is not the current reading.
+    public func linkHistoryEntry(_ entryID: Int64, toSession sessionID: String) {
+        guard playbackState?.sessionID == sessionID else { return }
+        playbackState?.historyEntryID = entryID
+    }
+
     /// Makes `id` the current reading. A reading already in progress, whatever started
     /// it, ends as `.interrupted` and its audio stops before the new session starts.
     /// Throws `.modelSwitchInProgress`, and leaves everything unchanged, while a model
@@ -157,7 +223,8 @@ public actor SpeechCoordinator {
         voice: String?,
         languageCode: String? = nil,
         speed: Double,
-        pauseBefore: Double = 0
+        pauseBefore: Double = 0,
+        sourceRange: Range<Int>? = nil
     ) async throws -> Int {
         guard sessionID == expectedSessionID, let eventSink else {
             throw SpeechCoordinatorError.sessionNotActive
@@ -186,7 +253,8 @@ public actor SpeechCoordinator {
                 voice: voice,
                 languageCode: languageCode,
                 speed: speed,
-                pauseBefore: ParagraphPause.clamped(pauseBefore)
+                pauseBefore: ParagraphPause.clamped(pauseBefore),
+                sourceRange: sourceRange
             )
         )
         await eventSink(
@@ -221,7 +289,8 @@ public actor SpeechCoordinator {
                         voice: settings.voice,
                         languageCode: settings.languageCode,
                         speed: settings.synthesisSpeed,
-                        pauseBefore: nextPause
+                        pauseBefore: nextPause,
+                        sourceRange: chunk.sourceRange
                     )
                     nextPause = chunk.endsParagraph ? settings.paragraphPause : 0
                     break
@@ -285,6 +354,7 @@ public actor SpeechCoordinator {
         guard sessionID == expectedSessionID, let eventSink, !playbackPaused else { return }
         let generation = sessionGeneration
         playbackPaused = true
+        playbackState?.phase = .paused
         await player.pause()
         guard sessionID == expectedSessionID,
               sessionGeneration == generation,
@@ -297,6 +367,7 @@ public actor SpeechCoordinator {
         guard sessionID == expectedSessionID, let eventSink, playbackPaused else { return }
         let generation = sessionGeneration
         playbackPaused = false
+        playbackState?.phase = playbackState?.chunkRange == nil ? .starting : .playing
         await player.resume()
         guard sessionID == expectedSessionID,
               sessionGeneration == generation,
@@ -346,6 +417,7 @@ public actor SpeechCoordinator {
         playbackPaused = false
         audioStarted = false
         replayRecordingID = replayCache.beginRecording()
+        playbackState = SpeechPlaybackState(sessionID: id)
         publishActivity()
         await events(ReadBackServerEvent(type: .sessionReady, sessionID: id))
     }
@@ -398,6 +470,7 @@ public actor SpeechCoordinator {
         sessionID = nil
         eventSink = nil
         sessionFailure = nil
+        playbackState = nil
         record(outcome, for: id)
         publishActivity()
         return EndedSession(id: id, sink: sink, outcome: outcome)
@@ -442,6 +515,10 @@ public actor SpeechCoordinator {
 
     private func removeActivityContinuation(_ id: UUID) {
         activityContinuations[id] = nil
+    }
+
+    private func removePlaybackContinuation(_ id: UUID) {
+        playbackContinuations[id] = nil
     }
 
     // MARK: - Playback worker
@@ -508,6 +585,11 @@ public actor SpeechCoordinator {
                 try Task.checkCancellation()
                 guard sessionID == expectedSessionID, sessionGeneration == generation else { return }
                 markAudioStarted(sessionID: expectedSessionID)
+                if var state = playbackState {
+                    state.phase = .playing
+                    state.chunkRange = segment.sourceRange
+                    playbackState = state
+                }
                 try await player.play(speech.clip)
                 try Task.checkCancellation()
                 guard sessionID == expectedSessionID, sessionGeneration == generation else { return }

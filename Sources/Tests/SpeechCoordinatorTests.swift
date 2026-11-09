@@ -38,6 +38,92 @@ func speechCoordinatorTests() -> [TestCase] {
             try expectEqual(synthesizedInputs, ["Hello"], "synthesized text")
             try expectEqual(playCount, 1, "play count")
         },
+        TestCase(name: "speech coordinator reports a chunk's range right before its audio plays") {
+            let player = StateCapturingAudioPlayer()
+            let synthesizer = StateCapturingSynthesizer()
+            let coordinator = SpeechCoordinator(synthesizer: synthesizer, player: player)
+            await player.attach(coordinator)
+            await synthesizer.attach(coordinator)
+
+            try await coordinator.replaceSession(id: "ranges") { _ in }
+            _ = try await coordinator.enqueueWaitingForRoom(
+                [
+                    StreamedTextChunk(text: "One.", endsParagraph: false, sourceRange: 0..<4),
+                    StreamedTextChunk(text: "Two.", endsParagraph: false, sourceRange: 5..<9),
+                ],
+                sessionID: "ranges",
+                settings: SpeechSettings(voice: nil, languageCode: nil, synthesisSpeed: 1, paragraphPause: 0),
+                pauseBefore: 0
+            )
+            await coordinator.finishInput(sessionID: "ranges")
+            _ = await coordinator.waitUntilFinished(sessionID: "ranges")
+
+            let atSynthesis = await synthesizer.states()
+            let atPlay = await player.states()
+            let afterEnd = await coordinator.currentPlaybackState
+            try expectEqual(
+                atSynthesis.map { $0?.chunkRange },
+                [nil, 0..<4],
+                "synthesis of a chunk does not move the range"
+            )
+            try expectEqual(atSynthesis.first??.phase, .starting, "no chunk plays during the first synthesis")
+            try expectEqual(atPlay.map { $0?.chunkRange }, [0..<4, 5..<9], "range is set before each clip plays")
+            try expectEqual(atPlay.map { $0?.phase }, [.playing, .playing], "phase is playing when audio starts")
+            try expectEqual(afterEnd, nil, "no state after the reading ends")
+        },
+        TestCase(name: "speech coordinator playback state follows links, pauses and the end of a reading") {
+            let player = PausableAudioPlayer()
+            let coordinator = SpeechCoordinator(synthesizer: RecordingSynthesizer(), player: player)
+            var updates = await coordinator.playbackUpdates().makeAsyncIterator()
+            let initial = await updates.next()
+            try expectEqual(initial, .some(nil), "nothing plays at first")
+
+            try await coordinator.replaceSession(id: "first") { _ in }
+            let started = await updates.next()
+            try expectEqual(started, SpeechPlaybackState(sessionID: "first"), "a new reading starts")
+            await coordinator.linkHistoryEntry(7, toSession: "first")
+            let linked = await updates.next()
+            try expectEqual(
+                linked,
+                SpeechPlaybackState(sessionID: "first", historyEntryID: 7),
+                "the link names the entry"
+            )
+            await coordinator.linkHistoryEntry(8, toSession: "stale")
+            let afterStaleLink = await coordinator.currentPlaybackState?.historyEntryID
+            try expectEqual(afterStaleLink, 7, "a stale link changes nothing")
+
+            _ = try await coordinator.enqueue(
+                sessionID: "first",
+                text: "Hello",
+                voice: nil,
+                speed: 1,
+                sourceRange: 0..<5
+            )
+            await player.waitUntilPlaying()
+            let playing = SpeechPlaybackState(
+                sessionID: "first",
+                historyEntryID: 7,
+                phase: .playing,
+                chunkRange: 0..<5
+            )
+            let chunkStart = await updates.next()
+            try expectEqual(chunkStart, playing, "the chunk plays")
+            await coordinator.pause(sessionID: "first")
+            let pausedPhase = await updates.next()??.phase
+            try expectEqual(pausedPhase, .paused, "pause keeps the range")
+            let pausedRange = await coordinator.currentPlaybackState?.chunkRange
+            try expectEqual(pausedRange, 0..<5, "paused range")
+            await coordinator.resume(sessionID: "first")
+            let resumed = await updates.next()
+            try expectEqual(resumed, playing, "resume plays the same chunk")
+
+            try await coordinator.replaceSession(id: "second") { _ in }
+            let replaced = await coordinator.currentPlaybackState
+            try expectEqual(replaced, SpeechPlaybackState(sessionID: "second"), "a replacement has no entry or range")
+            await coordinator.stop()
+            let afterStop = await coordinator.currentPlaybackState
+            try expectEqual(afterStop, nil, "stop clears the state")
+        },
         TestCase(name: "speech coordinator replacing a session interrupts the current reading") {
             let player = PausableAudioPlayer()
             let gate = ReadBackActivityGate()
@@ -761,4 +847,41 @@ private actor SuspendingControlAudioPlayer: AudioPlaying {
         pauseRelease?.resume()
         pauseRelease = nil
     }
+}
+
+/// Records the coordinator's playback state at the moment each clip starts to play.
+private actor StateCapturingAudioPlayer: AudioPlaying {
+    private var coordinator: SpeechCoordinator?
+    private var captured: [SpeechPlaybackState?] = []
+
+    func attach(_ coordinator: SpeechCoordinator) {
+        self.coordinator = coordinator
+    }
+
+    func play(_ clip: AudioClip) async throws {
+        captured.append(await coordinator?.currentPlaybackState)
+    }
+
+    func stop() async {}
+    func pause() async {}
+    func resume() async {}
+
+    func states() -> [SpeechPlaybackState?] { captured }
+}
+
+/// Records the coordinator's playback state at the moment each chunk starts to synthesize.
+private actor StateCapturingSynthesizer: SpeechSynthesizing {
+    private var coordinator: SpeechCoordinator?
+    private var captured: [SpeechPlaybackState?] = []
+
+    func attach(_ coordinator: SpeechCoordinator) {
+        self.coordinator = coordinator
+    }
+
+    func synthesize(_ request: SpeechRequest) async throws -> AudioClip {
+        captured.append(await coordinator?.currentPlaybackState)
+        return AudioClip(data: Data(request.input.utf8), format: .wav)
+    }
+
+    func states() -> [SpeechPlaybackState?] { captured }
 }
