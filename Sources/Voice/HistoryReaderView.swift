@@ -32,8 +32,9 @@ struct HistoryReaderView: View {
                     .padding(insets(forWidth: proxy.size.width))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .onChange(of: playingParagraphID(in: paragraphs)) { _, id in
-                    guard let id else { return }
+                // Each chunk scrolls, and so does the chunk that plays when the reader opens.
+                .onChange(of: spokenRange, initial: true) {
+                    guard let id = playingParagraphID(in: paragraphs) else { return }
                     if reduceMotion {
                         scroller.scrollTo(id, anchor: .top)
                     } else {
