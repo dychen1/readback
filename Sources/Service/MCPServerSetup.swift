@@ -33,15 +33,7 @@ public struct MCPServerSetup: Equatable, Sendable {
 
     /// The entry to merge into `~/.cursor/mcp.json` when Cursor is not installed here.
     public var cursorConfiguration: String {
-        """
-        {
-          "mcpServers": {
-            "\(Self.serverName)": {
-              "url": "\(endpoint)"
-            }
-          }
-        }
-        """
+        Self.json(["mcpServers": [Self.serverName: ["url": endpoint]]], options: .prettyPrinted)
     }
 
     public var claudeCodeCommand: String {
@@ -52,10 +44,13 @@ public struct MCPServerSetup: Equatable, Sendable {
         "codex mcp add \(Self.serverName) --url \(endpoint)"
     }
 
-    private static func json(_ object: [String: String]) -> String {
+    private static func json(
+        _ object: [String: Any],
+        options: JSONSerialization.WritingOptions = []
+    ) -> String {
         let data = try! JSONSerialization.data(
             withJSONObject: object,
-            options: [.sortedKeys, .withoutEscapingSlashes]
+            options: options.union([.sortedKeys, .withoutEscapingSlashes])
         )
         return String(decoding: data, as: UTF8.self)
     }

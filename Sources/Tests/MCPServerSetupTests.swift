@@ -36,6 +36,12 @@ func mcpServerSetupTests() -> [TestCase] {
                 "http://[::1]:51280/mcp",
                 "IPv6 endpoint"
             )
+            let oddHost = MCPServerSetup(host: #"local"host"#, port: 51280)
+            let oddJSON = try JSONSerialization.jsonObject(
+                with: Data(oddHost.cursorConfiguration.utf8)
+            ) as? [String: Any]
+            let oddURL = ((oddJSON?["mcpServers"] as? [String: Any])?["readback"] as? [String: Any])?["url"]
+            try expectEqual(oddURL as? String, oddHost.endpoint, "a quote in the host keeps the snippet valid JSON")
         },
         TestCase(name: "mcp host recognizes the client names hosts send") {
             try expectEqual(MCPHost(clientName: "cursor-vscode"), .cursor, "Cursor")
