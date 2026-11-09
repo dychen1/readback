@@ -188,6 +188,11 @@ public actor SpeechCoordinator {
         await eventSink(
             ReadBackServerEvent(type: .speechQueued, sessionID: expectedSessionID, sequence: sequence)
         )
+        // The sink can suspend. If the session ended meanwhile, starting a worker for it
+        // would leave `worker` set and block the next reading's worker.
+        guard sessionID == expectedSessionID else {
+            throw SpeechCoordinatorError.sessionNotActive
+        }
         startWorkerIfNeeded(sessionID: expectedSessionID)
         return sequence
     }
@@ -486,6 +491,7 @@ public actor SpeechCoordinator {
                         sequence: segment.sequence
                     )
                 )
+                guard sessionID == expectedSessionID, sessionGeneration == generation else { return }
                 if queuePaused, pendingCharacters < maximumPendingCharacters {
                     queuePaused = false
                     await sink(ReadBackServerEvent(type: .queueResumed, sessionID: expectedSessionID))

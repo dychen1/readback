@@ -69,6 +69,43 @@ func speechCoordinatorTests() -> [TestCase] {
             try expectEqual(gateState, .speech(sessionID: "second"), "gate follows the new reading")
             await coordinator.cancel(sessionID: "second")
         },
+        TestCase(name: "speech coordinator: a reading stopped while its text queues does not block the next one") {
+            let synthesizer = RecordingSynthesizer()
+            let coordinator = SpeechCoordinator(
+                synthesizer: synthesizer,
+                player: RecordingAudioPlayer()
+            )
+            let hold = SinkHold()
+            try await coordinator.replaceSession(id: "old") { event in
+                if event.type == .speechQueued { await hold.block() }
+            }
+            let oldEnqueue = Task {
+                try await coordinator.enqueue(sessionID: "old", text: "Old", voice: nil, speed: 1)
+            }
+            await hold.waitUntilBlocked()
+            await coordinator.stop()
+            await hold.release()
+            let oldResult = await oldEnqueue.result
+
+            try await coordinator.replaceSession(id: "new") { _ in }
+            _ = try await coordinator.enqueue(sessionID: "new", text: "New", voice: nil, speed: 1)
+            await coordinator.finishInput(sessionID: "new")
+            // Before the fix the new reading never started; stop it so the test fails
+            // instead of hanging.
+            let watchdog = Task {
+                try await wait(for: .seconds(2))
+                await coordinator.stop()
+            }
+            let outcome = await coordinator.waitUntilFinished(sessionID: "new")
+            watchdog.cancel()
+
+            let inputs = await synthesizer.inputs()
+            try expectEqual(outcome, .completed, "the next reading plays to the end")
+            try expectEqual(inputs, ["New"], "only the next reading is synthesized")
+            if case .success = oldResult {
+                throw TestFailure(description: "the stopped reading's enqueue must report sessionNotActive")
+            }
+        },
         TestCase(name: "speech coordinator ignores operations from a replaced session") {
             let player = PausableAudioPlayer()
             let coordinator = SpeechCoordinator(
@@ -464,6 +501,30 @@ func speechCoordinatorTests() -> [TestCase] {
             )
         },
     ]
+}
+
+/// Blocks a session's event sink until released, to hold a call inside `enqueue`.
+private actor SinkHold {
+    private var blocked = false
+    private var blockedWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    func block() async {
+        blocked = true
+        blockedWaiters.forEach { $0.resume() }
+        blockedWaiters.removeAll()
+        await withCheckedContinuation { releaseContinuation = $0 }
+    }
+
+    func waitUntilBlocked() async {
+        if blocked { return }
+        await withCheckedContinuation { blockedWaiters.append($0) }
+    }
+
+    func release() {
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
 }
 
 private actor EventRecorder {
