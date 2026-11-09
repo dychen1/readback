@@ -216,6 +216,46 @@ func historyRecordingAPITests() -> [TestCase] {
             let entries = try await fixture.store.entries()
             try expectEqual(entries.map(\.text), ["Interrupted reading."], "interrupted text")
         },
+        TestCase(name: "a stopped stream does not save text sent after the stop") {
+            let file = makeHistoryFileURL()
+            defer { removeHistoryDirectory(of: file) }
+            let fixture = await HistoryAPIFixture(historyFile: file, playDuration: .seconds(5))
+            let router = fixture.api.makeRouter()
+            let app = Application(
+                router: Router(),
+                server: .http1WebSocketUpgrade(webSocketRouter: router),
+                configuration: .init(address: .hostname("127.0.0.1", port: 0))
+            )
+
+            _ = try await app.test(.live) { client in
+                try await client.ws("/v1/readback/stream") { inbound, outbound, _ in
+                    let decoder = JSONDecoder()
+                    var iterator = inbound.messages(maxSize: 65_536).makeAsyncIterator()
+                    func send(_ event: ReadBackClientEvent) async throws {
+                        let data = try JSONEncoder().encode(event)
+                        try await outbound.write(.text(String(decoding: data, as: UTF8.self)))
+                    }
+                    func next() async throws -> ReadBackServerEvent? {
+                        guard case .text(let text) = try await iterator.next() else { return nil }
+                        return try decoder.decode(ReadBackServerEvent.self, from: Data(text.utf8))
+                    }
+                    _ = try await next()
+                    try await send(.textAppend("Heard sentence. "))
+                    try await send(.inputCommit)
+                    while let event = try await next(), event.type != .speechStarted {}
+                    await fixture.coordinator.stop()
+                    while let event = try await next(), event.type != .sessionFinished {}
+
+                    try await send(.textAppend("Unheard text. More words."))
+                    try? await send(.inputDone)
+                    // The server closes the stream once it finds that the session ended.
+                    while try await next() != nil {}
+                }
+            }
+
+            let entries = try await fixture.store.entries()
+            try expectEqual(entries.map(\.text), ["Heard sentence. "], "only text sent before the stop")
+        },
         TestCase(name: "only the app's own endpoint can skip history") {
             let file = makeHistoryFileURL()
             defer { removeHistoryDirectory(of: file) }

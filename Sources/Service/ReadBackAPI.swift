@@ -297,6 +297,11 @@ public final class ReadBackAPI: @unchecked Sendable {
                 )
                 switch event {
                 case .textAppend(let text):
+                    // After a stop or a newer reading, this text is never heard, so history
+                    // keeps only what was sent while the session was current.
+                    if await coordinator.currentSessionID != sessionID {
+                        history.finish()
+                    }
                     if let entryID = await history.append(text) {
                         await coordinator.linkHistoryEntry(entryID, toSession: sessionID)
                     }
