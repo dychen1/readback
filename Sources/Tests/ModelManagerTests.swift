@@ -4,12 +4,15 @@ import ReadBackCore
 private actor ManagerTestLibrary: ModelLibraryProtocol {
     let locations: [ModelID: ModelLocation]
     let profiles: [ModelID: MLXRuntimeProfile]
+    let uninstalledLanguages: Set<String>
 
     init(
         locations: [ModelID: ModelLocation],
-        profiles: [ModelID: MLXRuntimeProfile]? = nil
+        profiles: [ModelID: MLXRuntimeProfile]? = nil,
+        uninstalledLanguages: Set<String> = []
     ) {
         self.locations = locations
+        self.uninstalledLanguages = uninstalledLanguages
         self.profiles = profiles
             ?? Dictionary(uniqueKeysWithValues: locations.keys.map { ($0, .kokoro) })
     }
@@ -33,7 +36,9 @@ private actor ManagerTestLibrary: ModelLibraryProtocol {
         return profile
     }
 
-    func isLanguageInstalled(_ code: String, for id: ModelID) async -> Bool { true }
+    func isLanguageInstalled(_ code: String, for id: ModelID) async -> Bool {
+        !uninstalledLanguages.contains(code)
+    }
     func install(_ id: ModelID) async throws {}
     func installLanguage(_ code: String, for id: ModelID) async throws {}
     func registerLocalModel(at directory: URL) async throws {}
@@ -264,6 +269,37 @@ func modelManagerTests() -> [TestCase] {
                 try expectEqual(error, .invalidLanguage("xx"), "rejected language")
             }
         },
+        TestCase(name: "model manager rejects any language for a local model with no catalog") {
+            let fixture = try ModelManagerFixture(localRuntime: .kokoro)
+            defer { fixture.remove() }
+            await fixture.manager.warmConfiguredModel()
+
+            do {
+                _ = try await fixture.manager.replayKey(
+                    for: SpeechRequest(input: "hello", voice: nil, languageCode: "zz", speed: 1, format: .wav)
+                )
+                throw TestFailure(description: "local Kokoro must reject a language it cannot check")
+            } catch let error as ModelManagerError {
+                try expectEqual(error, .invalidLanguage("zz"), "rejected language")
+            }
+        },
+        TestCase(name: "model manager rejects a catalog language that is not installed") {
+            guard let missing = CuratedModelDefinition.kokoro.languages.first?.code else {
+                throw TestFailure(description: "the Kokoro catalog lists no language")
+            }
+            let fixture = try ModelManagerFixture(uninstalledLanguages: [missing])
+            defer { fixture.remove() }
+            await fixture.manager.warmConfiguredModel()
+
+            do {
+                _ = try await fixture.manager.replayKey(
+                    for: SpeechRequest(input: "hello", voice: nil, languageCode: missing, speed: 1, format: .wav)
+                )
+                throw TestFailure(description: "a language that is not installed must be rejected")
+            } catch let error as ModelManagerError {
+                try expectEqual(error, .invalidLanguage(missing), "rejected language")
+            }
+        },
         TestCase(name: "model manager gives local Chatterbox the standard curated controls") {
             let fixture = try ModelManagerFixture(localRuntime: .chatterboxTurbo)
             defer { fixture.remove() }
@@ -289,7 +325,8 @@ private final class ModelManagerFixture {
     init(
         failingDirectoryNames: Set<String> = [],
         savedVoiceID: String? = nil,
-        localRuntime: MLXRuntimeProfile? = nil
+        localRuntime: MLXRuntimeProfile? = nil,
+        uninstalledLanguages: Set<String> = []
     ) throws {
         rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -326,7 +363,11 @@ private final class ModelManagerFixture {
             locations[.local] = .local(localURL)
             profiles[.local] = localRuntime
         }
-        let library = ManagerTestLibrary(locations: locations, profiles: profiles)
+        let library = ManagerTestLibrary(
+            locations: locations,
+            profiles: profiles,
+            uninstalledLanguages: uninstalledLanguages
+        )
         let modelSession = ManagerTestSession(failingDirectoryNames: failingDirectoryNames)
         session = modelSession
         let configurationURL = rootURL.appendingPathComponent("config.json")
