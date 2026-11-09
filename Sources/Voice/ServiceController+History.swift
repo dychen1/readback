@@ -2,53 +2,42 @@ import ReadBackCore
 
 @MainActor
 extension ServiceController {
-    /// Stops whatever plays and reads the entry again with the current voice. The replay does
-    /// not add a history entry.
+    /// Reads the entry again with the current voice. The replay replaces the current reading,
+    /// whatever started it, and does not add a history entry.
     func replayFromHistory(_ entry: HistoryEntry) {
-        historyList.playbackDidChange(HistoryPlayback(entryID: entry.id, phase: .starting))
-        Task {
-            // The clipboard path cancels only its own earlier request. Without this call, an
-            // agent or voicepipe reading blocks the replay.
-            await coordinator.stop()
-            let requestID = startClipboardSpeech(
-                entry.text,
-                purpose: .historyReplay,
-                completionStatus: "Replay finished"
-            ) { [historyList] error in
-                historyList.replayDidFail(
-                    "ReadBack cannot replay this entry. \(error.localizedDescription)"
-                )
-            }
-            historyReplay = (requestID, entry.id)
-            syncHistoryPlayback()
+        startClipboardSpeech(
+            entry.text,
+            purpose: .historyReplay(entry.id),
+            completionStatus: "Replay finished"
+        ) { [historyList] error in
+            historyList.replayDidFail(
+                "ReadBack cannot replay this entry. \(error.localizedDescription)"
+            )
         }
     }
 
-    /// Stops the current reading, whatever started it.
+    /// Stops the current reading, whatever started it. A clipboard request that has no
+    /// session yet is canceled too.
     func stopCurrentReading() {
         if clipboardPlaybackState == .starting {
             cancelPendingClipboardSpeech()
         }
-        Task { await coordinator.stop() }
+        pendingHistoryPlayback = nil
+        refreshHistoryPlayback()
+        stopReading()
     }
 
-    /// Sends the state of the current replay to the History window. Only replays have a known
-    /// History entry, so the window shows no playback state for other readings.
-    func syncHistoryPlayback() {
-        guard let replay = historyReplay, replay.requestID == clipboardRequestID else {
-            historyReplay = nil
-            historyList.playbackDidChange(nil)
-            return
+    /// Sends the playback state of the current reading to the History window. Any reading
+    /// that has a history entry shows there: agent read-backs, clipboard reads, voicepipe
+    /// streams and replays.
+    func refreshHistoryPlayback() {
+        if let pending = pendingHistoryPlayback {
+            if clipboardRequestID == pending.requestID {
+                historyList.playbackDidChange(HistoryPlayback(entryID: pending.entryID, phase: .starting))
+                return
+            }
+            pendingHistoryPlayback = nil
         }
-        let phase: HistoryPlayback.Phase? = switch clipboardPlaybackState {
-        case .idle: nil
-        case .starting: .starting
-        case .playing: .playing
-        case .paused: .paused
-        }
-        if phase == nil {
-            historyReplay = nil
-        }
-        historyList.playbackDidChange(phase.map { HistoryPlayback(entryID: replay.entryID, phase: $0) })
+        historyList.playbackDidChange(HistoryPlayback(speechPlayback))
     }
 }

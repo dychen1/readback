@@ -122,8 +122,10 @@ public struct ReadingStarter: Sendable {
         } catch {
             throw .modelUnavailable(Self.switchingMessage)
         }
-        if let history, let historySource {
-            await history.record(text, source: historySource)
+        if let history, let historySource,
+           let entryID = await history.record(text, source: historySource)
+        {
+            await coordinator.linkHistoryEntry(entryID, toSession: id)
         }
         Task { [coordinator] in
             var chunker = StreamingTextChunker()

@@ -13,6 +13,8 @@ private actor StubVoicePipeSessionClient: VoicePipeSessionClient {
         self.failsToConnect = failsToConnect
     }
 
+    var sessionID: String? { failsToConnect ? nil : "stub-session" }
+
     func connect() async throws {
         if failsToConnect {
             throw TestFailure(description: "forced connection failure")
@@ -80,14 +82,14 @@ func voicePipeTextSpeakerTests() -> [TestCase] {
             let newRequest = UUID()
 
             let oldSpeech = Task {
-                try await speaker.speak("old", requestID: oldRequest) {}
+                try await speaker.speak("old", requestID: oldRequest) { _ in }
             }
             await oldClient.waitUntilFinishStarts()
             await speaker.cancel(requestID: oldRequest)
             try await oldSpeech.value
 
             let newSpeech = Task {
-                try await speaker.speak("new", requestID: newRequest) {}
+                try await speaker.speak("new", requestID: newRequest) { _ in }
             }
             await newClient.waitUntilFinishStarts()
             await speaker.cancel(requestID: oldRequest)
@@ -108,7 +110,7 @@ func voicePipeTextSpeakerTests() -> [TestCase] {
             let speaker = VoicePipeTextSpeaker(clientFactory: { factory.next() })
 
             do {
-                try await speaker.speak("fails", requestID: UUID()) {}
+                try await speaker.speak("fails", requestID: UUID()) { _ in }
                 throw TestFailure(description: "connection should fail")
             } catch let error as TestFailure {
                 try expectEqual(error.description, "forced connection failure", "speech error")
@@ -128,7 +130,7 @@ func voicePipeTextSpeakerTests() -> [TestCase] {
                     try await wait(for: .seconds(10))
                 } catch {
                 }
-                try await speaker.speak("cancelled", requestID: requestID) {}
+                try await speaker.speak("cancelled", requestID: requestID) { _ in }
             }
             speech.cancel()
 

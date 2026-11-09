@@ -20,6 +20,20 @@ public struct HistoryPlayback: Equatable, Sendable {
         self.spokenRange = spokenRange
     }
 
+    /// The History window state of the current reading. It is `nil` when nothing plays or
+    /// when the reading has no history entry, for example a voice preview. History entries
+    /// start at the first character that is not whitespace, so the chunk range of the
+    /// reading is also the spoken range in the entry text.
+    public init?(_ state: SpeechPlaybackState?) {
+        guard let state, let entryID = state.historyEntryID else { return nil }
+        let phase: Phase = switch state.phase {
+        case .starting: .starting
+        case .playing: .playing
+        case .paused: .paused
+        }
+        self.init(entryID: entryID, phase: phase, spokenRange: state.chunkRange)
+    }
+
     /// The fraction of the text that played before the current part, from 0 to 1. The value
     /// moves one part at a time. It is `nil` while `spokenRange` is `nil`.
     public func progress(textLength: Int) -> Double? {

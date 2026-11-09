@@ -301,7 +301,9 @@ public final class ReadBackAPI: @unchecked Sendable {
                 )
                 switch event {
                 case .textAppend(let text):
-                    await history.append(text)
+                    if let entryID = await history.append(text) {
+                        await coordinator.linkHistoryEntry(entryID, toSession: sessionID)
+                    }
                     pauseBefore = try await coordinator.enqueueWaitingForRoom(
                         chunker.append(text),
                         sessionID: sessionID,

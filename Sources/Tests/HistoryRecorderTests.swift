@@ -80,10 +80,38 @@ func historyRecorderTests() -> [TestCase] {
             try expectEqual(entries, [], "deleted entry stays deleted")
         },
         TestCase(name: "only clipboard reads from the app are saved to history") {
-            try expectEqual(AppSpeechPurpose.clipboardRead.historySource, .clipboard, "clipboard read")
-            try expectEqual(AppSpeechPurpose.voicePreview.historySource, nil, "voice preview")
-            try expectEqual(AppSpeechPurpose.historyReplay.historySource, nil, "history replay")
-            try expectEqual(AppSpeechPurpose.settingsRestart.historySource, nil, "settings restart")
+            let file = makeHistoryFileURL()
+            defer { removeHistoryDirectory(of: file) }
+            let recorder = HistoryRecorder(store: HistoryStore(fileURL: file))
+
+            let read = await recorder.entryID(for: .clipboardRead, text: "Copied text.")
+            let preview = await recorder.entryID(for: .voicePreview, text: "test, hello world")
+            let replay = await recorder.entryID(for: .historyReplay(41), text: "Old text.")
+            let restart = await recorder.entryID(for: .settingsRestart(42), text: "Old text.")
+            let restartWithoutEntry = await recorder.entryID(for: .settingsRestart(nil), text: "Preview.")
+
+            let entries = try await recorder.store.entries()
+            try expectEqual(entries.map(\.text), ["Copied text."], "only the clipboard read is saved")
+            try expectEqual(entries.map(\.source), [.clipboard], "clipboard source")
+            try expectEqual(read, entries.first?.id, "clipboard read uses its new entry")
+            try expectEqual(preview, nil, "voice preview has no entry")
+            try expectEqual(replay, 41, "replay uses the entry it repeats")
+            try expectEqual(restart, 42, "restart keeps the entry of the reading")
+            try expectEqual(restartWithoutEntry, nil, "restart of a preview has no entry")
+        },
+        TestCase(name: "history entries do not keep leading whitespace") {
+            let file = makeHistoryFileURL()
+            defer { removeHistoryDirectory(of: file) }
+            let recorder = HistoryRecorder(store: HistoryStore(fileURL: file))
+            var stream = recorder.stream(source: .voicepipe)
+
+            let created = await stream.append("\n  Streamed text.")
+            let appended = await stream.append(" More.")
+
+            let entries = try await recorder.store.entries()
+            try expectEqual(entries.map(\.text), ["Streamed text. More."], "stored text starts at the first word")
+            try expectEqual(created, entries.first?.id, "the first append returns the new entry")
+            try expectEqual(appended, nil, "later appends return nil")
         },
         TestCase(name: "agent host names are cleaned before they are saved") {
             try expectEqual(HistorySource.agent(reportedHost: nil), .agent(host: nil), "missing host")

@@ -17,8 +17,12 @@ public struct HistoryRecorder: Sendable {
 
     /// Saves a reading that has just started. Returns the ID of the new entry. Returns `nil`
     /// if the text is blank or the save fails.
+    ///
+    /// The entry does not keep leading whitespace. Playback chunk offsets start at the first
+    /// character that is not whitespace, so they then point into the stored text.
     @discardableResult
     public func record(_ text: String, source: HistorySource) async -> Int64? {
+        let text = String(text.drop(while: \.isWhitespace))
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         do {
             return try await store.insert(text, source: source, at: now())
@@ -62,17 +66,21 @@ public struct HistoryStreamRecording: Sendable {
         self.source = source
     }
 
-    public mutating func append(_ text: String) async {
-        guard let recorder, !isFinished, !text.isEmpty else { return }
+    /// Adds `text` to the entry. Returns the ID of the entry only when this call creates it.
+    @discardableResult
+    public mutating func append(_ text: String) async -> Int64? {
+        guard let recorder, !isFinished, !text.isEmpty else { return nil }
         if let entryID {
             // Stop after a failed append, for example after the user deletes the entry. An
             // entry with a gap would replay text that is different from what the user heard.
             let appended = await recorder.append(text, to: entryID)
             isFinished = !appended
-        } else if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            entryID = await recorder.record(text, source: source)
-            isFinished = entryID == nil
+            return nil
         }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        entryID = await recorder.record(text, source: source)
+        isFinished = entryID == nil
+        return entryID
     }
 
     /// Ends the recording. The recording ignores all later text.
@@ -83,14 +91,26 @@ public struct HistoryStreamRecording: Sendable {
 
 /// Tells why the app speaks. Only clipboard reads become history entries. The user did not
 /// ask to hear a preview. A replay or a restart repeats an entry that history already has.
-public enum AppSpeechPurpose: Sendable {
+public enum AppSpeechPurpose: Equatable, Sendable {
     case clipboardRead
     case voicePreview
-    case historyReplay
-    case settingsRestart
+    case historyReplay(HistoryEntry.ID)
+    /// Starts the current reading again after a settings change. The value is the history
+    /// entry of that reading, if it has one.
+    case settingsRestart(HistoryEntry.ID?)
+}
 
-    public var historySource: HistorySource? {
-        self == .clipboardRead ? .clipboard : nil
+extension HistoryRecorder {
+    /// Returns the history entry of a reading that the app starts. A clipboard read becomes a
+    /// new entry. A replay or a restart uses the entry that it repeats. A voice preview has no
+    /// entry.
+    public func entryID(for purpose: AppSpeechPurpose, text: String) async -> HistoryEntry.ID? {
+        switch purpose {
+        case .clipboardRead: await record(text, source: .clipboard)
+        case .voicePreview: nil
+        case .historyReplay(let id): id
+        case .settingsRestart(let id): id
+        }
     }
 }
 

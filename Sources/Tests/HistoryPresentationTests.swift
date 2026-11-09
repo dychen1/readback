@@ -138,6 +138,33 @@ func historyPresentationTests() -> [TestCase] {
             }
             try expectEqual(entry(1, now, " \n\n ").paragraphs, [], "blank text")
         },
+        TestCase(name: "history playback follows any reading that has a history entry") {
+            try expectEqual(HistoryPlayback(nil), nil, "nothing plays")
+            try expectEqual(
+                HistoryPlayback(SpeechPlaybackState(sessionID: "preview", phase: .playing, chunkRange: 0..<4)),
+                nil,
+                "a reading without an entry"
+            )
+            try expectEqual(
+                HistoryPlayback(SpeechPlaybackState(sessionID: "agent", historyEntryID: 3)),
+                HistoryPlayback(entryID: 3, phase: .starting),
+                "starting reading has no spoken range"
+            )
+            try expectEqual(
+                HistoryPlayback(
+                    SpeechPlaybackState(sessionID: "agent", historyEntryID: 3, phase: .playing, chunkRange: 10..<20)
+                ),
+                HistoryPlayback(entryID: 3, phase: .playing, spokenRange: 10..<20),
+                "playing chunk becomes the spoken range"
+            )
+            try expectEqual(
+                HistoryPlayback(
+                    SpeechPlaybackState(sessionID: "agent", historyEntryID: 3, phase: .paused, chunkRange: 10..<20)
+                ),
+                HistoryPlayback(entryID: 3, phase: .paused, spokenRange: 10..<20),
+                "pause keeps the spoken range"
+            )
+        },
         TestCase(name: "history progress counts the text before the spoken range") {
             let none = HistoryPlayback(entryID: 1, phase: .playing)
             try expectEqual(none.progress(textLength: 100), nil, "no progress without a range")

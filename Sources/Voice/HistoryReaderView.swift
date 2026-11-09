@@ -28,6 +28,7 @@ struct HistoryReaderView: View {
                         }
                     }
                     .frame(maxWidth: 560, alignment: .leading)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: spokenRange)
                     .padding(insets(forWidth: proxy.size.width))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -73,6 +74,7 @@ struct HistoryReaderView: View {
 /// A thin accent line under the toolbar that shows how much of the entry played.
 struct HistoryProgressLine: View {
     let value: Double
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { proxy in
@@ -80,6 +82,7 @@ struct HistoryProgressLine: View {
                 .fill(.tint)
                 .frame(width: proxy.size.width * value)
         }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: value)
         .frame(height: 2)
         .accessibilityElement()
         .accessibilityLabel("Playback progress")

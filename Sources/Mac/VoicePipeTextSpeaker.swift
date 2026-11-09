@@ -2,6 +2,7 @@ import Foundation
 import VoicePipeKit
 
 public protocol VoicePipeSessionClient: Sendable {
+    var sessionID: String? { get async }
     func connect() async throws
     func append(_ text: String) async throws
     func finish() async throws
@@ -55,13 +56,15 @@ public actor VoicePipeTextSpeaker: ClipboardSpeechPlaying {
     }
 
     public func speak(_ text: String) async throws {
-        try await speak(text, requestID: UUID()) {}
+        try await speak(text, requestID: UUID()) { _ in }
     }
 
+    /// Reads `text` and returns when the reading ends. `onReady` gets the server's session ID
+    /// of the reading after the server accepts the text.
     public func speak(
         _ text: String,
         requestID: UUID,
-        onReady: @escaping @Sendable () async -> Void
+        onReady: @escaping @Sendable (_ sessionID: String?) async -> Void
     ) async throws {
         try Task.checkCancellation()
         let client = clientFactory()
@@ -71,7 +74,7 @@ public actor VoicePipeTextSpeaker: ClipboardSpeechPlaying {
             try await client.connect()
             try await client.append(text)
             try Task.checkCancellation()
-            await onReady()
+            await onReady(await client.sessionID)
             try await client.finish()
             clear(requestID: requestID)
         } catch {
