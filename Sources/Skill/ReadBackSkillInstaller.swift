@@ -176,7 +176,9 @@ public struct ReadBackSkillInstaller: @unchecked Sendable {
     }
 
     /// Replaces the managed package with the bundled one when ReadBack owns the
-    /// installed package and its version differs. This never changes host folders.
+    /// installed package and the bundled version is newer, or the package is incomplete.
+    /// An older bundled version never replaces a newer one, so two installed ReadBack
+    /// builds do not swap the skill back and forth. This never changes host folders.
     /// Linked hosts see the update through their links, and a conflicting folder stays
     /// as it is. Returns whether the package changed.
     @discardableResult
@@ -187,7 +189,8 @@ public struct ReadBackSkillInstaller: @unchecked Sendable {
               itemExists(at: managedURL),
               let installedManifest = try? manifest(at: managedURL),
               installedManifest.isOwnedByReadBack,
-              installedManifest.skillVersion != sourceManifest.skillVersion
+              sourceManifest.skillVersion.compare(installedManifest.skillVersion, options: .numeric)
+                == .orderedDescending
                 || !packageIsComplete(at: managedURL)
         else { return false }
         try publishManagedPackage()

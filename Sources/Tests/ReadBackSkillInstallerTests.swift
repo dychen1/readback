@@ -160,6 +160,19 @@ func readBackSkillInstallerTests() -> [TestCase] {
             let repeated = try fixture.installer.updateInstalledPackageIfNeeded()
             try expect(!repeated, "nothing to do once versions match")
         },
+        TestCase(name: "skill auto-update never replaces a newer installed version") {
+            let fixture = try SkillInstallerFixture()
+            defer { fixture.cleanup() }
+            try fixture.writeSource(version: "1.10.0", skill: "skill version 1.10")
+            try fixture.installer.install()
+            try fixture.writeSource(version: "1.9.0", skill: "skill version 1.9")
+
+            let downgraded = try fixture.installer.updateInstalledPackageIfNeeded()
+
+            let managedSkill = try String(contentsOf: fixture.managedURL.appendingPathComponent("SKILL.md"))
+            try expect(!downgraded, "an older bundled version is not installed")
+            try expectEqual(managedSkill, "skill version 1.10", "the newer package stays")
+        },
         TestCase(name: "skill auto-update never installs or replaces a foreign package") {
             let notInstalled = try SkillInstallerFixture()
             defer { notInstalled.cleanup() }
