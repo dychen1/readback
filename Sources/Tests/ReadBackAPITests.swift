@@ -50,6 +50,8 @@ actor APIAudioPlayer: AudioPlaying {
 
 actor APITestModelManager: ModelManaging {
     private var requests: [SpeechRequest] = []
+    private var holding = false
+    private var holdWaiters: [CheckedContinuation<Void, Never>] = []
     private var runtimeState: ModelRuntimeState
     private let operation: ModelOperation
     private let failure: String?
@@ -102,7 +104,12 @@ actor APITestModelManager: ModelManaging {
         return AudioClip(data: Data([0x01]), format: request.format)
     }
 
+    /// A request with the voice "hold" waits in `replayKey` until `releaseHold()`.
     func replayKey(for request: SpeechRequest) async throws -> SpeechReplayKey? {
+        if request.voice == "hold" {
+            holding = true
+            await withCheckedContinuation { holdWaiters.append($0) }
+        }
         if request.voice == "missing" {
             throw ModelManagerError.invalidVoice("missing")
         }
@@ -121,6 +128,14 @@ actor APITestModelManager: ModelManaging {
     func warmConfiguredModel() async {}
 
     func receivedRequests() -> [SpeechRequest] { requests }
+
+    func isHolding() -> Bool { holding }
+
+    func releaseHold() {
+        holding = false
+        holdWaiters.forEach { $0.resume() }
+        holdWaiters.removeAll()
+    }
 }
 
 private struct ErrorBody: Decodable {

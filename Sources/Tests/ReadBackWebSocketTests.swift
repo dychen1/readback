@@ -241,6 +241,29 @@ func readBackWebSocketTests() -> [TestCase] {
                 try expect(stops >= 1, "audio stops")
             }
         },
+        TestCase(name: "play stops its reading when the client hangs up before playback starts") {
+            let fixture = LiveFixture(player: APIAudioPlayer(blocking: true))
+            _ = try await fixture.app.test(.live) { client in
+                let port = try client.port.unwrap("live test port")
+                var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/play")!)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpBody = Data(#"{"input":"Hang up early.","voice":"hold"}"#.utf8)
+                let task = Task { try await URLSession.shared.data(for: request) }
+                while await !fixture.manager.isHolding() {
+                    try await wait(for: .milliseconds(2))
+                }
+
+                task.cancel()
+                try await wait(for: .milliseconds(200))
+                await fixture.manager.releaseHold()
+                for _ in 0..<200 where await fixture.coordinator.hasActiveSession {
+                    try await wait(for: .milliseconds(10))
+                }
+                let active = await fixture.coordinator.hasActiveSession
+                try expect(!active, "a client that left during start does not keep its reading")
+            }
+        },
         TestCase(name: "stream upgrade accepts only its own loopback origin") {
             let fixture = LiveFixture()
             _ = try await fixture.app.test(.live) { client in

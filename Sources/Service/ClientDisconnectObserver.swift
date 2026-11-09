@@ -1,4 +1,32 @@
+import Foundation
 import NIOCore
+
+/// Connects a client disconnect to the reading that ReadBack starts for that client.
+/// The client can leave before the reading exists, so this keeps that fact until
+/// `onLeave` gets the action. The action runs exactly once.
+final class ClientDisconnectSignal: @unchecked Sendable {
+    private let lock = NSLock()
+    private var left = false
+    private var action: (@Sendable () -> Void)?
+
+    func clientLeft() {
+        let pending = lock.withLock { () -> (@Sendable () -> Void)? in
+            guard !left else { return nil }
+            left = true
+            return action
+        }
+        pending?()
+    }
+
+    /// Runs `action` when the client leaves, or immediately if it already left.
+    func onLeave(_ action: @escaping @Sendable () -> Void) {
+        let alreadyLeft = lock.withLock { () -> Bool in
+            self.action = action
+            return left
+        }
+        if alreadyLeft { action() }
+    }
+}
 
 /// Reports when an HTTP client goes away while ReadBack still handles its request.
 ///

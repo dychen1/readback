@@ -159,6 +159,17 @@ public final class ReadBackAPI: @unchecked Sendable {
 
         router.post("/play") { [self] request, context -> Response in
             guard isOriginAllowed(request) else { return originRejectedResponse() }
+            let disconnect = ClientDisconnectSignal()
+            let observer = try? await ClientDisconnectObserver.start(on: context.channel) {
+                disconnect.clientLeft()
+            }
+            defer {
+                if let observer { ClientDisconnectObserver.stop(observer, on: context.channel) }
+            }
+            if observer == nil {
+                // The channel already closed, so nobody waits for this reading.
+                disconnect.clientLeft()
+            }
             let id: String
             do {
                 let publicRequest = try await decodeSpeechRequest(request, context: context)
@@ -176,21 +187,10 @@ public final class ReadBackAPI: @unchecked Sendable {
                 return errorResponse(Self.serviceError(for: error))
             }
 
-            let observer: String?
-            do {
-                observer = try await ClientDisconnectObserver.start(on: context.channel) {
-                    [coordinator] in
-                    Task { await coordinator.cancel(sessionID: id) }
-                }
-            } catch {
-                // The channel already closed, so nobody is waiting for this reading.
-                observer = nil
-                await coordinator.cancel(sessionID: id)
+            disconnect.onLeave { [coordinator] in
+                Task { await coordinator.cancel(sessionID: id) }
             }
             let outcome = await coordinator.waitUntilFinished(sessionID: id)
-            if let observer {
-                ClientDisconnectObserver.stop(observer, on: context.channel)
-            }
             switch outcome {
             case .completed:
                 return jsonResponse(ActionResponse(ok: true))
